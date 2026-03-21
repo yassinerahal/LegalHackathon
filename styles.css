@@ -127,9 +127,9 @@ body {
 }
 
 .list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
   gap: 0.7rem;
   padding: 0.65rem 0;
   border-bottom: 1px solid var(--line);
@@ -142,6 +142,36 @@ body {
 .list .meta {
   color: var(--muted);
   font-size: 0.82rem;
+  margin: 0.2rem 0 0;
+}
+
+.case-comments {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.case-comment {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #4a556c;
+}
+
+.case-doc-status {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  color: #51607a;
+}
+
+.case-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-small {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
 }
 
 .badge {
@@ -276,6 +306,147 @@ textarea {
 
 .drop-zone p {
   margin: 0;
+}
+
+.uploaded-file-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
+}
+
+.uploaded-file-box {
+  border: 1px solid #cfd8ea;
+  border-radius: 8px;
+  background: #f4f7ff;
+  padding: 0.35rem;
+  font-size: 0.78rem;
+  cursor: grab;
+  user-select: none;
+  display: grid;
+  gap: 0.25rem;
+  width: 106px;
+  text-align: left;
+}
+
+.uploaded-file-thumb {
+  width: 100%;
+  height: 72px;
+  border: 1px solid #d7e0f1;
+  border-radius: 6px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.uploaded-file-thumb-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.uploaded-file-thumb-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4c5f84;
+}
+
+.uploaded-file-name {
+  display: block;
+  line-height: 1.2;
+  color: #2c3953;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uploaded-file-box:active {
+  cursor: grabbing;
+}
+
+.doc-placeholder-section {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+.doc-placeholder-section h4 {
+  margin: 0 0 0.55rem;
+}
+
+.doc-placeholder-row {
+  display: grid;
+  grid-template-columns: 1fr 140px auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.doc-placeholder-list {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.doc-placeholder-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+
+.doc-placeholder-item p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.doc-drop-field {
+  min-width: 220px;
+  border: 1px dashed #bfd0f3;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.77rem;
+  color: #5f6f8c;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.doc-drop-field.drag-active {
+  border-color: var(--primary);
+  background: #edf3ff;
+}
+
+.doc-drop-thumb-image {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  object-fit: cover;
+  border: 1px solid #d4dded;
+  flex: 0 0 auto;
+}
+
+.doc-drop-thumb-label {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  border: 1px solid #d4dded;
+  background: #fff;
+  color: #4c5f84;
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .screen-drop-overlay {

@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LexFlow - Legal Practice Platform</title>
+    <title>NEXTACT - Legal Practice Platform</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-logo">LF</span>
+        <span class="brand-logo">NA</span>
         <div>
-          <h1>LexFlow</h1>
+          <h1>NEXTACT</h1>
           <p>Simple legal practice workspace</p>
         </div>
       </div>
@@ -83,13 +83,14 @@
 
     <dialog id="quickAddModal">
       <form method="dialog" class="modal-form">
-        <h3>Add Case</h3>
+        <h3 id="modalTitle">Add Case</h3>
 
         <label for="caseName">Case Name</label>
         <input id="caseName" type="text" placeholder="Example: Contract Review for Acme" />
 
-        <label for="clientName">Client Name</label>
-        <input id="clientName" type="text" placeholder="Example: Sara Ali" />
+        <label for="clientNames">Client Name(s)</label>
+        <input id="clientNames" type="text" placeholder="Example: Sara Ali, Omar Khan" />
+        <p class="field-note">Use commas to add multiple clients to one case.</p>
         <p id="clientStatus" class="field-note"></p>
         <button type="button" id="showClientFormBtn" class="btn-ghost">Add Client</button>
 
@@ -110,11 +111,21 @@
           <button type="button" id="saveClientBtn" class="btn-primary">Save Client</button>
         </section>
 
+        <label for="caseStatus">Case Status</label>
+        <select id="caseStatus">
+          <option value="Active">Active</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Finished">Finished</option>
+        </select>
+
         <label for="caseDeadline">Deadline</label>
         <input id="caseDeadline" type="date" />
 
         <label for="caseDescription">Short Description</label>
         <textarea id="caseDescription" rows="3" placeholder="What is this case about?"></textarea>
+
+        <label for="caseComment">Status Comment</label>
+        <textarea id="caseComment" rows="2" placeholder="Add a quick update for this case"></textarea>
 
         <label>Documents</label>
         <div id="dropZone" class="drop-zone">
@@ -122,6 +133,24 @@
           <input id="caseDocuments" type="file" multiple />
         </div>
         <p id="fileCount" class="field-note"></p>
+        <div id="uploadedFileBoxes" class="uploaded-file-boxes"></div>
+
+        <section class="doc-placeholder-section">
+          <h4>Required Document Placeholders</h4>
+          <div class="doc-placeholder-row">
+            <input
+              id="docPlaceholderName"
+              type="text"
+              placeholder="Example: Signed Power of Attorney"
+            />
+            <select id="docPlaceholderStatus">
+              <option value="Pending">Pending</option>
+              <option value="Uploaded">Uploaded</option>
+            </select>
+            <button type="button" id="addDocPlaceholderBtn" class="btn-ghost">Add</button>
+          </div>
+          <ul id="docPlaceholderList" class="doc-placeholder-list"></ul>
+        </section>
 
         <div class="modal-actions">
           <button type="button" id="cancelBtn" class="btn-ghost">Cancel</button>
