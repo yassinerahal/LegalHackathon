@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Login</title>
+    <link rel="stylesheet" href="auth.css" />
+  </head>
+  <body>
+    <main class="auth-page">
+      <section class="auth-card">
+        <h1>Welcome Back</h1>
+        <p class="muted">Sign in to continue to NEXTACT.</p>
+
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" type="email" placeholder="you@example.com" />
+
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" placeholder="Enter password" />
+
+        <p id="authMessage" class="message"></p>
+
+        <button id="loginBtn" class="btn-primary" type="button">Log In</button>
+        <p class="switch-link">
+          Don't have an account?
+          <a href="signup.html">Create one</a>
+        </p>
+      </section>
+    </main>
+    <script src="auth.js"></script>
+  </body>
+</html>

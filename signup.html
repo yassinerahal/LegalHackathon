@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Create Account</title>
+    <link rel="stylesheet" href="auth.css" />
+  </head>
+  <body>
+    <main class="auth-page">
+      <section class="auth-card">
+        <h1>Create Account</h1>
+        <p class="muted">Start using NEXTACT in seconds.</p>
+
+        <label for="signupName">Full Name</label>
+        <input id="signupName" type="text" placeholder="Your name" />
+
+        <label for="signupEmail">Email</label>
+        <input id="signupEmail" type="email" placeholder="you@example.com" />
+
+        <label for="signupPassword">Password</label>
+        <input id="signupPassword" type="password" placeholder="At least 6 characters" />
+
+        <p id="authMessage" class="message"></p>
+
+        <button id="signupBtn" class="btn-primary" type="button">Create Account</button>
+        <p class="switch-link">
+          Already have an account?
+          <a href="login.html">Log in</a>
+        </p>
+      </section>
+    </main>
+    <script src="auth.js"></script>
+  </body>
+</html>

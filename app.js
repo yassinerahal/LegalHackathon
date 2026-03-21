@@ -38,6 +38,7 @@ const deadlineList = document.getElementById("deadlineList");
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
 const newItemBtn = document.getElementById("newItemBtn");
+const logoutBtn = document.getElementById("logoutBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
 
@@ -73,6 +74,16 @@ let newUploadNames = new Set();
 let dragDepth = 0;
 let editingCaseId = null;
 let currentDocPlaceholders = [];
+const SESSION_KEY = "nextact_current_user";
+
+function requireSession() {
+  const sessionRaw = localStorage.getItem(SESSION_KEY);
+  if (!sessionRaw) {
+    window.location.href = "login.html";
+  }
+}
+
+requireSession();
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -400,6 +411,13 @@ cancelBtn.addEventListener("click", () => {
   screenDropOverlay.classList.add("hidden");
   quickAddModal.close();
 });
+
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem(SESSION_KEY);
+    window.location.href = "login.html";
+  });
+}
 clientNames.addEventListener("input", updateClientStatus);
 
 caseList.addEventListener("click", (event) => {
