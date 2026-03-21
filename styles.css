@@ -528,18 +528,24 @@ textarea {
 
 .drop-zone-browse {
   min-width: 210px;
-  min-height: 52px;
+  min-height: 56px;
   border-radius: 12px;
-  background: transparent;
-  color: #1ba8e6;
-  border: 2px solid #1ba8e6;
-  font-size: 1.75rem;
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--primary-dark) 65%, #1f3fa8 35%);
+  font-size: 1.05rem;
   font-weight: 700;
+  box-shadow: 0 8px 18px rgba(48, 81, 202, 0.22);
+  padding: 0.7rem 1rem;
+}
+
+.drop-zone-browse:hover {
+  background: var(--primary-dark);
 }
 
 body.dark-mode .drop-zone-browse {
-  color: #5bc7ff;
-  border-color: #5bc7ff;
+  color: #fff;
+  border-color: color-mix(in srgb, var(--primary-dark) 70%, #162a69 30%);
 }
 
 .drop-zone input[type="file"] {
