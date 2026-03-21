@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LexFlow - Legal Practice Platform</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo">LF</span>
+        <div>
+          <h1>LexFlow</h1>
+          <p>Simple legal practice workspace</p>
+        </div>
+      </div>
+      <button id="newItemBtn" class="btn-primary">+ Add</button>
+    </header>
+
+    <main class="container">
+      <section class="kpi-grid">
+        <article class="card">
+          <p class="label">Active Cases</p>
+          <h2 id="activeCases">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Clients</p>
+          <h2 id="totalClients">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Deadlines This Week</p>
+          <h2 id="upcomingDeadlines">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Pending Documents</p>
+          <h2 id="pendingDocs">0</h2>
+        </article>
+      </section>
+
+      <section class="grid-2">
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Recent Cases</h3>
+            <button class="btn-ghost">View All</button>
+          </div>
+          <ul id="caseList" class="list"></ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Upcoming Deadlines</h3>
+            <button class="btn-ghost">Calendar</button>
+          </div>
+          <ul id="deadlineList" class="list"></ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Modules (Build Next)</h3>
+        </div>
+        <div class="module-grid">
+          <article class="module-card">
+            <h4>Case Management</h4>
+            <p>Track case stage, priority, and assigned lawyer.</p>
+          </article>
+          <article class="module-card">
+            <h4>Client Profiles</h4>
+            <p>Central profile with contact info, history, and notes.</p>
+          </article>
+          <article class="module-card">
+            <h4>Document Center</h4>
+            <p>Upload, categorize, and manage legal files securely.</p>
+          </article>
+          <article class="module-card">
+            <h4>Workflow Tasks</h4>
+            <p>Create checklists and assign follow-up actions.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="quickAddModal">
+      <form method="dialog" class="modal-form">
+        <h3>Add Case</h3>
+
+        <label for="caseName">Case Name</label>
+        <input id="caseName" type="text" placeholder="Example: Contract Review for Acme" />
+
+        <label for="clientName">Client Name</label>
+        <input id="clientName" type="text" placeholder="Example: Sara Ali" />
+        <p id="clientStatus" class="field-note"></p>
+        <button type="button" id="showClientFormBtn" class="btn-ghost">Add Client</button>
+
+        <section id="clientForm" class="client-form hidden">
+          <h4>New Client</h4>
+          <label for="clientFullName">Name</label>
+          <input id="clientFullName" type="text" />
+
+          <label for="clientAddress">Address</label>
+          <input id="clientAddress" type="text" />
+
+          <label for="clientEmail">Email (optional)</label>
+          <input id="clientEmail" type="email" />
+
+          <label for="clientPhone">Phone (optional)</label>
+          <input id="clientPhone" type="tel" />
+
+          <button type="button" id="saveClientBtn" class="btn-primary">Save Client</button>
+        </section>
+
+        <label for="caseDeadline">Deadline</label>
+        <input id="caseDeadline" type="date" />
+
+        <label for="caseDescription">Short Description</label>
+        <textarea id="caseDescription" rows="3" placeholder="What is this case about?"></textarea>
+
+        <label>Documents</label>
+        <div id="dropZone" class="drop-zone">
+          <p>Drag & drop documents here, or click to select files.</p>
+          <input id="caseDocuments" type="file" multiple />
+        </div>
+        <p id="fileCount" class="field-note"></p>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelBtn" class="btn-ghost">Cancel</button>
+          <button type="button" id="saveBtn" class="btn-primary">Save Case</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="screenDropOverlay" class="screen-drop-overlay hidden">
+      <div class="screen-drop-content">Drop documents anywhere to attach to this case</div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
