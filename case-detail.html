@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Case Details</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo">NA</span>
+        <div>
+          <h1>Case Details</h1>
+          <p>Single case overview</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="backToCasesBtn" class="btn-ghost" type="button">All Cases</button>
+        <button id="logoutBtn" class="btn-ghost" type="button">Log Out</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="panel-head">
+          <h3 id="caseTitle">Case</h3>
+          <div class="case-actions">
+            <span id="caseStatusBadge" class="badge">Active</span>
+            <button id="editCaseBtn" type="button" class="btn-ghost btn-small">Edit</button>
+          </div>
+        </div>
+        <p id="caseMeta" class="meta"></p>
+        <p id="caseDescription" class="case-comment"></p>
+        <p id="caseDeadline" class="case-doc-status"></p>
+      </section>
+
+      <section class="grid-2">
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Uploaded Documents</h3>
+          </div>
+          <div id="detailDropZone" class="drop-zone">
+            <p>Drag & drop documents here, or click to select files.</p>
+            <input id="detailCaseDocuments" type="file" multiple />
+          </div>
+          <p id="detailFileCount" class="field-note"></p>
+          <div id="uploadedDocumentsGrid" class="uploaded-file-boxes"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Required Placeholders</h3>
+          </div>
+          <section class="doc-placeholder-section">
+            <div class="doc-placeholder-row">
+              <input
+                id="detailDocPlaceholderName"
+                type="text"
+                placeholder="Example: Signed Power of Attorney"
+              />
+              <select id="detailDocPlaceholderStatus">
+                <option value="Pending">Pending</option>
+                <option value="Uploaded">Uploaded</option>
+              </select>
+              <button id="detailAddDocPlaceholderBtn" type="button" class="btn-ghost">Add</button>
+            </div>
+          </section>
+          <ul id="requiredDocsList" class="doc-placeholder-list"></ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Comments (Newest First)</h3>
+        </div>
+        <ul id="commentsList" class="list"></ul>
+      </section>
+    </main>
+
+    <dialog id="editCaseModal">
+      <form method="dialog" class="modal-form">
+        <h3>Edit Case</h3>
+
+        <label for="editCaseName">Case Name</label>
+        <input id="editCaseName" type="text" />
+
+        <label for="editClientNames">Client Name(s)</label>
+        <input id="editClientNames" type="text" placeholder="Comma separated clients" />
+
+        <label for="editCaseStatus">Case Status</label>
+        <select id="editCaseStatus">
+          <option value="Active">Active</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Finished">Finished</option>
+        </select>
+
+        <label for="editCaseDeadline">Deadline</label>
+        <input id="editCaseDeadline" type="date" />
+
+        <label for="editCaseDescription">Short Description</label>
+        <textarea id="editCaseDescription" rows="3"></textarea>
+
+        <label for="editCaseComment">Add Comment</label>
+        <textarea id="editCaseComment" rows="2" placeholder="Optional update comment"></textarea>
+
+        <div class="modal-actions">
+          <button id="cancelEditBtn" type="button" class="btn-ghost">Cancel</button>
+          <button id="saveEditBtn" type="button" class="btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="fileContextMenu" class="context-menu hidden">
+      <button id="ctxDownloadBtn" type="button" class="btn-ghost">Download</button>
+      <button id="ctxCopyBtn" type="button" class="btn-ghost">Copy File</button>
+      <button id="ctxRemoveBtn" type="button" class="btn-ghost">Remove</button>
+    </div>
+
+    <script src="case-detail.js"></script>
+  </body>
+</html>

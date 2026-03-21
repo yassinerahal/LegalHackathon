@@ -126,6 +126,70 @@ body {
   font-size: 1rem;
 }
 
+.calendar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.calendar-month-label {
+  margin: 0;
+  min-width: 110px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.calendar-header-cell {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.1rem 0;
+}
+
+.calendar-day {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 70px;
+  padding: 0.25rem;
+  background: #fcfdff;
+}
+
+.calendar-day.muted-day {
+  opacity: 0.45;
+}
+
+.calendar-day-number {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.calendar-events {
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.calendar-event {
+  font-size: 0.62rem;
+  background: #e9efff;
+  color: #2746b5;
+  border-radius: 6px;
+  padding: 0.1rem 0.22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .list {
   margin: 0;
   padding: 0;
@@ -143,6 +207,14 @@ body {
 
 .list li:last-child {
   border-bottom: 0;
+}
+
+.case-row-clickable {
+  cursor: pointer;
+}
+
+.case-row-clickable:hover {
+  background: #fafcff;
 }
 
 .list .meta {
@@ -333,6 +405,7 @@ textarea {
   gap: 0.25rem;
   width: 106px;
   text-align: left;
+  position: relative;
 }
 
 .uploaded-file-thumb {
@@ -369,6 +442,38 @@ textarea {
 
 .uploaded-file-box:active {
   cursor: grabbing;
+}
+
+.uploaded-file-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #d8deea;
+  background: #fff;
+  color: #5a6882;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  gap: 0.2rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem;
+  min-width: 140px;
+  box-shadow: 0 10px 20px rgba(19, 31, 54, 0.12);
+}
+
+.context-menu.hidden {
+  display: none;
 }
 
 .doc-placeholder-section {

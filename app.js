@@ -4,6 +4,12 @@ const INITIAL_CASES = [
   { title: "Labor Dispute - Noor Group", stage: "Hearing Prep", clientName: "Noor Group" }
 ];
 
+const DEFAULT_DEADLINES = [
+  { title: "File motion for Vertex case", date: "2026-03-23" },
+  { title: "Client review meeting", date: "2026-03-25" },
+  { title: "Submit compliance checklist", date: "2026-03-27" }
+];
+
 const state = {
   cases: INITIAL_CASES.map((entry, index) => ({
     id: `case-${Date.now()}-${index}`,
@@ -15,11 +21,7 @@ const state = {
     requiredDocuments: [],
     uploadedDocuments: []
   })),
-  deadlines: [
-    { title: "File motion for Vertex case", date: "2026-03-23" },
-    { title: "Client review meeting", date: "2026-03-25" },
-    { title: "Submit compliance checklist", date: "2026-03-27" }
-  ],
+  deadlines: [],
   clients: [
     { name: "Maya Al-Hassan", address: "City Center 10", email: "", phone: "" },
     { name: "Mina Karim", address: "Palm Street 8", email: "", phone: "" },
@@ -34,6 +36,8 @@ const upcomingDeadlines = document.getElementById("upcomingDeadlines");
 const pendingDocs = document.getElementById("pendingDocs");
 const caseList = document.getElementById("caseList");
 const deadlineList = document.getElementById("deadlineList");
+const calendarBtn = document.getElementById("calendarBtn");
+const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
 
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
@@ -75,6 +79,8 @@ let dragDepth = 0;
 let editingCaseId = null;
 let currentDocPlaceholders = [];
 const SESSION_KEY = "nextact_current_user";
+const DEADLINES_KEY = "nextact_deadlines";
+const CASES_KEY = "nextact_cases";
 
 function requireSession() {
   const sessionRaw = localStorage.getItem(SESSION_KEY);
@@ -83,7 +89,74 @@ function requireSession() {
   }
 }
 
+function loadDeadlines() {
+  const raw = localStorage.getItem(DEADLINES_KEY);
+  if (!raw) return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+    }
+    return parsed;
+  } catch (error) {
+    return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+  }
+}
+
+function saveDeadlines() {
+  localStorage.setItem(DEADLINES_KEY, JSON.stringify(state.deadlines));
+}
+
+function loadCases() {
+  const raw = localStorage.getItem(CASES_KEY);
+  if (!raw) {
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  } catch (error) {
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  }
+}
+
+function saveCases() {
+  localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
+}
+
 requireSession();
+state.cases = loadCases();
+state.deadlines = loadDeadlines();
+saveCases();
+saveDeadlines();
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -129,6 +202,8 @@ function renderCases() {
   caseList.innerHTML = "";
   state.cases.forEach((entry) => {
     const li = document.createElement("li");
+    li.dataset.caseId = entry.id;
+    li.classList.add("case-row-clickable");
     const newestComments = (entry.comments || []).slice(0, 2);
     const requiredDocs = entry.requiredDocuments || [];
     const pendingCount = requiredDocs.filter((doc) => doc.status === "Pending").length;
@@ -152,7 +227,6 @@ function renderCases() {
       </div>
       <div class="case-actions">
         <span class="${badgeClass}">${entry.status}</span>
-        <button type="button" class="btn-ghost btn-small" data-edit-id="${entry.id}">Edit</button>
       </div>
     `;
     caseList.appendChild(li);
@@ -384,7 +458,7 @@ function openEditCase(caseId) {
   caseStatus.value = entry.status || "Active";
   caseDescription.value = entry.stage || "";
   caseComment.value = "";
-  caseDeadline.value = "";
+  caseDeadline.value = entry.deadline || "";
   selectedFiles = [];
   currentUploadedDocuments = normalizeUploadedDocuments(entry.uploadedDocuments);
   newUploadNames = new Set();
@@ -418,12 +492,25 @@ if (logoutBtn) {
     window.location.href = "login.html";
   });
 }
+
+if (calendarBtn) {
+  calendarBtn.addEventListener("click", () => {
+    window.location.href = "calendar.html";
+  });
+}
+
+if (viewAllCasesBtn) {
+  viewAllCasesBtn.addEventListener("click", () => {
+    window.location.href = "cases.html";
+  });
+}
 clientNames.addEventListener("input", updateClientStatus);
 
 caseList.addEventListener("click", (event) => {
-  const editBtn = event.target.closest("[data-edit-id]");
-  if (!editBtn) return;
-  openEditCase(editBtn.dataset.editId);
+  const row = event.target.closest("[data-case-id]");
+  if (row) {
+    window.location.href = `case-detail.html?id=${encodeURIComponent(row.dataset.caseId)}`;
+  }
 });
 
 showClientFormBtn.addEventListener("click", () => {
@@ -616,6 +703,7 @@ saveBtn.addEventListener("click", () => {
         ...state.cases[caseIndex],
         title,
         stage: description || "New case",
+        deadline,
         clientNames: resolvedClientNames,
         status,
         comments: newComment ? [newComment, ...existingComments] : existingComments,
@@ -628,6 +716,7 @@ saveBtn.addEventListener("click", () => {
       id: `case-${Date.now()}`,
       title,
       stage: description || "New case",
+      deadline,
       clientNames: resolvedClientNames,
       status,
       comments: newComment ? [newComment] : [],
@@ -640,8 +729,11 @@ saveBtn.addEventListener("click", () => {
         title: `${title} deadline`,
         date: deadline
       });
+      saveDeadlines();
     }
   }
+
+  saveCases();
 
   state.documents += newUploadNames.size;
 
