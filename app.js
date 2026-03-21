@@ -436,7 +436,9 @@ function updateSelectedFiles(files) {
       currentUploadedDocuments.push({
         name: file.name,
         previewUrl: URL.createObjectURL(file),
-        mimeType: file.type || ""
+        mimeType: file.type || "",
+        uploadedAt: Date.now()
+
       });
       newUploadNames.add(file.name);
       existingNames.add(file.name);
