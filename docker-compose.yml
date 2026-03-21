@@ -6,7 +6,7 @@ services:
   # ---------------------------------------------------------
   backend:
     build: ./backend
-    container_name: lexagon_backend
+    container_name: nextact_backend
     ports:
       - "3000:3000" # Expose port 3000 for frontend access
     env_file:
@@ -20,18 +20,20 @@ services:
       # Prevent local node_modules from overwriting container's node_modules
       - /usr/src/app/node_modules
 
-  # ---------------------------------------------------------
+ # ---------------------------------------------------------
   # 2. THE POSTGRESQL DATABASE
   # ---------------------------------------------------------
   postgres:
     image: postgres:15-alpine
-    container_name: lexagon_db
+    container_name: nextact_db
     ports:
-      - "5432:5432" # Standard PostgreSQL port
-    env_file:
-      - .env # Load POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB
+      - "5432:5432"
+    # Here we map your custom .env variables to the names Postgres expects!
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
-      # Persist database data on the host machine
       - postgres_data:/var/lib/postgresql/data
 
   # ---------------------------------------------------------
@@ -39,7 +41,7 @@ services:
   # ---------------------------------------------------------
   minio:
     image: minio/minio:latest
-    container_name: lexagon_storage
+    container_name: nextact_storage
     ports:
       - "9000:9000" # API port (used by the backend to upload files)
       - "9001:9001" # Web UI port (used by developers to view files)
