@@ -52,9 +52,11 @@
           <article class="module-card">
             <h4>Upload Document to Case</h4>
             <p>Attach new documents directly to an existing case.</p>
-            <div id="quickUploadDropZone" class="drop-zone large-drop-zone">
-              <p>Drag & drop files here to upload</p>
-              <p class="field-note">or click to choose files</p>
+            <div id="quickUploadDropZone" class="drop-zone large-drop-zone modern-drop-zone">
+              <span class="drop-zone-icon" aria-hidden="true">☁</span>
+              <p class="drop-zone-title">Drag & Drop files here</p>
+              <p class="drop-zone-subtitle">or</p>
+              <button type="button" class="drop-zone-browse">Browse Files</button>
               <input id="quickUploadDocuments" type="file" multiple />
             </div>
             <p id="quickUploadStatus" class="field-note"></p>
@@ -148,8 +150,11 @@
         <textarea id="caseComment" rows="2" placeholder="Add a quick update for this case"></textarea>
 
         <label>Documents</label>
-        <div id="dropZone" class="drop-zone">
-          <p>Drag & drop documents here, or click to select files.</p>
+        <div id="dropZone" class="drop-zone modern-drop-zone">
+          <span class="drop-zone-icon" aria-hidden="true">☁</span>
+          <p class="drop-zone-title">Drag & Drop files here</p>
+          <p class="drop-zone-subtitle">or</p>
+          <button type="button" class="drop-zone-browse">Browse Files</button>
           <input id="caseDocuments" type="file" multiple />
         </div>
         <p id="fileCount" class="field-note"></p>

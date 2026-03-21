@@ -42,8 +42,11 @@
           <div class="panel-head">
             <h3>Uploaded Documents</h3>
           </div>
-          <div id="detailDropZone" class="drop-zone">
-            <p>Drag & drop documents here, or click to select files.</p>
+          <div id="detailDropZone" class="drop-zone modern-drop-zone">
+            <span class="drop-zone-icon" aria-hidden="true">☁</span>
+            <p class="drop-zone-title">Drag & Drop files here</p>
+            <p class="drop-zone-subtitle">or</p>
+            <button type="button" class="drop-zone-browse">Browse Files</button>
             <input id="detailCaseDocuments" type="file" multiple />
           </div>
           <p id="detailFileCount" class="field-note"></p>

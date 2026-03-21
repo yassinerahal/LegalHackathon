@@ -197,6 +197,10 @@ body.dark-mode .brand-logo {
   background: #fcfdff;
 }
 
+body.dark-mode .calendar-day {
+  background: #131d30;
+}
+
 .calendar-day.muted-day {
   opacity: 0.45;
 }
@@ -251,6 +255,10 @@ body.dark-mode .brand-logo {
 
 .case-row-clickable:hover {
   background: #fafcff;
+}
+
+body.dark-mode .case-row-clickable:hover {
+  background: #1c2740;
 }
 
 .case-row-clickable:focus-within {
@@ -460,36 +468,90 @@ textarea {
 }
 
 .drop-zone {
-  border: 2px dashed #cbd6ea;
-  border-radius: 10px;
-  padding: 0.9rem;
+  position: relative;
+  border: 2px dashed color-mix(in srgb, var(--muted) 30%, var(--line) 70%);
+  border-radius: 14px;
+  padding: 1.1rem;
   text-align: center;
-  background: #fafcff;
+  background: color-mix(in srgb, var(--card) 90%, var(--bg) 10%);
   cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .drop-zone.drag-active {
   border-color: var(--primary);
-  background: #f0f4ff;
-}
-
-.drop-zone p {
-  margin: 0;
+  background: color-mix(in srgb, var(--primary) 10%, var(--card) 90%);
+  transform: translateY(-1px);
 }
 
 .large-drop-zone {
   min-height: 220px;
   width: 100%;
   display: grid;
-  align-content: start;
+  align-content: center;
   justify-items: center;
-  gap: 0.4rem;
+  gap: 0.65rem;
   text-align: center;
-  padding-top: 2rem;
+  padding-top: 1.4rem;
+}
+
+.modern-drop-zone {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+}
+
+.drop-zone-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  color: color-mix(in srgb, var(--muted) 80%, var(--text) 20%);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, var(--muted) 20%);
+  background: color-mix(in srgb, var(--card) 85%, var(--bg) 15%);
+}
+
+.drop-zone-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drop-zone-subtitle {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.drop-zone-browse {
+  min-width: 210px;
+  min-height: 52px;
+  border-radius: 12px;
+  background: transparent;
+  color: #1ba8e6;
+  border: 2px solid #1ba8e6;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+body.dark-mode .drop-zone-browse {
+  color: #5bc7ff;
+  border-color: #5bc7ff;
+}
+
+.drop-zone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .large-drop-zone input[type="file"] {
-  margin-top: 1.1rem;
+  margin-top: 0;
 }
 
 .uploaded-file-boxes {
