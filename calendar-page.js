@@ -1,11 +1,14 @@
 const SESSION_KEY = "nextact_current_user";
 const DEADLINES_KEY = "nextact_deadlines";
+const THEME_KEY = "nextact_theme";
 
 const calendarGrid = document.getElementById("calendarGrid");
 const calendarMonthLabel = document.getElementById("calendarMonthLabel");
 const calendarPrevBtn = document.getElementById("calendarPrevBtn");
 const calendarNextBtn = document.getElementById("calendarNextBtn");
-const backToDashboardBtn = document.getElementById("backToDashboardBtn");
+const goDashboardBtn = document.getElementById("goDashboardBtn");
+const loggedInUserName = document.getElementById("loggedInUserName");
+const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 let calendarCursor = new Date();
@@ -14,6 +17,26 @@ function requireSession() {
   const sessionRaw = localStorage.getItem(SESSION_KEY);
   if (!sessionRaw) {
     window.location.href = "login.html";
+  }
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle("dark-mode", theme === "dark");
+  toggleDarkModeBtn.textContent = theme === "dark" ? "☀" : "◐";
+}
+
+function readTheme() {
+  return localStorage.getItem(THEME_KEY) || "light";
+}
+
+function renderLoggedInUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+  } catch (error) {
+    loggedInUserName.textContent = "";
   }
 }
 
@@ -116,8 +139,14 @@ calendarNextBtn.addEventListener("click", () => {
   renderCalendar();
 });
 
-backToDashboardBtn.addEventListener("click", () => {
+goDashboardBtn.addEventListener("click", () => {
   window.location.href = "index.html";
+});
+
+toggleDarkModeBtn.addEventListener("click", () => {
+  const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+  localStorage.setItem(THEME_KEY, nextTheme);
+  applyTheme(nextTheme);
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -126,4 +155,6 @@ logoutBtn.addEventListener("click", () => {
 });
 
 requireSession();
+applyTheme(readTheme());
+renderLoggedInUser();
 renderCalendar();

@@ -9,15 +9,17 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-logo">NA</span>
+        <span class="brand-logo">⏱</span>
         <div>
           <h1>All Cases</h1>
           <p>NEXTACT case overview</p>
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="backToDashboardBtn" class="btn-ghost" type="button">Dashboard</button>
-        <button id="logoutBtn" class="btn-ghost" type="button">Log Out</button>
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
       </div>
     </header>
 

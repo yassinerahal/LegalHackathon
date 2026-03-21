@@ -38,9 +38,21 @@ const caseList = document.getElementById("caseList");
 const deadlineList = document.getElementById("deadlineList");
 const calendarBtn = document.getElementById("calendarBtn");
 const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
+const newCaseMainBtn = document.getElementById("newCaseMainBtn");
+const loggedInUserName = document.getElementById("loggedInUserName");
+const quickUploadDropZone = document.getElementById("quickUploadDropZone");
+const quickUploadDocuments = document.getElementById("quickUploadDocuments");
+const quickUploadStatus = document.getElementById("quickUploadStatus");
+const assignUploadModal = document.getElementById("assignUploadModal");
+const assignUploadFileCount = document.getElementById("assignUploadFileCount");
+const assignUploadCaseSelect = document.getElementById("assignUploadCaseSelect");
+const cancelAssignUploadBtn = document.getElementById("cancelAssignUploadBtn");
+const confirmAssignUploadBtn = document.getElementById("confirmAssignUploadBtn");
+const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
+const closeModalBtn = document.getElementById("closeModalBtn");
 const newItemBtn = document.getElementById("newItemBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const cancelBtn = document.getElementById("cancelBtn");
@@ -78,9 +90,12 @@ let newUploadNames = new Set();
 let dragDepth = 0;
 let editingCaseId = null;
 let currentDocPlaceholders = [];
+let pendingQuickUploadFiles = [];
 const SESSION_KEY = "nextact_current_user";
 const DEADLINES_KEY = "nextact_deadlines";
 const CASES_KEY = "nextact_cases";
+const CLIENTS_KEY = "nextact_clients";
+const THEME_KEY = "nextact_theme";
 
 function requireSession() {
   const sessionRaw = localStorage.getItem(SESSION_KEY);
@@ -152,11 +167,51 @@ function saveCases() {
   localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
 }
 
+function loadClients() {
+  const raw = localStorage.getItem(CLIENTS_KEY);
+  if (!raw) return [...state.clients];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : [...state.clients];
+  } catch (error) {
+    return [...state.clients];
+  }
+}
+
+function saveClients() {
+  localStorage.setItem(CLIENTS_KEY, JSON.stringify(state.clients));
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle("dark-mode", theme === "dark");
+  toggleDarkModeBtn.textContent = theme === "dark" ? "☀" : "◐";
+  toggleDarkModeBtn.title = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+}
+
+function readTheme() {
+  return localStorage.getItem(THEME_KEY) || "light";
+}
+
+function renderLoggedInUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+  } catch (error) {
+    loggedInUserName.textContent = "";
+  }
+}
+
 requireSession();
 state.cases = loadCases();
 state.deadlines = loadDeadlines();
+state.clients = loadClients();
 saveCases();
 saveDeadlines();
+saveClients();
+applyTheme(readTheme());
+renderLoggedInUser();
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -252,6 +307,73 @@ function render() {
   renderStats();
   renderCases();
   renderDeadlines();
+  renderQuickUploadCaseOptions();
+}
+
+function renderQuickUploadCaseOptions() {
+  if (!assignUploadCaseSelect) return;
+  assignUploadCaseSelect.innerHTML = "";
+  state.cases.forEach((entry) => {
+    const option = document.createElement("option");
+    option.value = entry.id;
+    option.textContent = entry.title;
+    assignUploadCaseSelect.appendChild(option);
+  });
+}
+
+function openAssignUploadModal(files) {
+  pendingQuickUploadFiles = Array.from(files || []);
+  if (!pendingQuickUploadFiles.length) return;
+  renderQuickUploadCaseOptions();
+  assignUploadFileCount.textContent = `${pendingQuickUploadFiles.length} file(s) ready to upload.`;
+  assignUploadModal.showModal();
+}
+
+function uploadPendingFilesToCase() {
+  const selectedCaseId = assignUploadCaseSelect.value;
+  if (!selectedCaseId) {
+    quickUploadStatus.textContent = "Select a case first.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+  if (!pendingQuickUploadFiles.length) {
+    quickUploadStatus.textContent = "No files selected.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  const caseIndex = state.cases.findIndex((entry) => entry.id === selectedCaseId);
+  if (caseIndex < 0) {
+    quickUploadStatus.textContent = "Case not found.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  const existingDocs = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
+  const existingNames = new Set(existingDocs.map((file) => file.name));
+  pendingQuickUploadFiles.forEach((file) => {
+    if (!existingNames.has(file.name)) {
+      existingDocs.push({
+        name: file.name,
+        previewUrl: URL.createObjectURL(file),
+        mimeType: file.type || ""
+      });
+      existingNames.add(file.name);
+    }
+  });
+
+  state.cases[caseIndex] = {
+    ...state.cases[caseIndex],
+    uploadedDocuments: existingDocs
+  };
+  state.documents += pendingQuickUploadFiles.length;
+  saveCases();
+  render();
+  quickUploadDocuments.value = "";
+  quickUploadStatus.textContent = `${pendingQuickUploadFiles.length} file(s) uploaded successfully.`;
+  quickUploadStatus.className = "field-note success";
+  pendingQuickUploadFiles = [];
+  assignUploadModal.close();
 }
 
 function clearClientForm() {
@@ -475,7 +597,7 @@ function openEditCase(caseId) {
   quickAddModal.showModal();
 }
 
-newItemBtn.addEventListener("click", () => {
+newCaseMainBtn.addEventListener("click", () => {
   clearCaseForm();
   quickAddModal.showModal();
 });
@@ -484,6 +606,22 @@ cancelBtn.addEventListener("click", () => {
   dragDepth = 0;
   screenDropOverlay.classList.add("hidden");
   quickAddModal.close();
+});
+
+if (closeModalBtn) {
+  closeModalBtn.addEventListener("click", () => {
+    dragDepth = 0;
+    screenDropOverlay.classList.add("hidden");
+    quickAddModal.close();
+  });
+}
+
+quickAddModal.addEventListener("click", (event) => {
+  if (event.target === quickAddModal) {
+    dragDepth = 0;
+    screenDropOverlay.classList.add("hidden");
+    quickAddModal.close();
+  }
 });
 
 if (logoutBtn) {
@@ -502,6 +640,44 @@ if (calendarBtn) {
 if (viewAllCasesBtn) {
   viewAllCasesBtn.addEventListener("click", () => {
     window.location.href = "cases.html";
+  });
+}
+
+if (quickUploadDropZone) {
+  quickUploadDropZone.addEventListener("click", () => quickUploadDocuments.click());
+  quickUploadDropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    quickUploadDropZone.classList.add("drag-active");
+  });
+  quickUploadDropZone.addEventListener("dragleave", () => {
+    quickUploadDropZone.classList.remove("drag-active");
+  });
+  quickUploadDropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    quickUploadDropZone.classList.remove("drag-active");
+    openAssignUploadModal(event.dataTransfer.files);
+  });
+  quickUploadDocuments.addEventListener("change", () => {
+    openAssignUploadModal(quickUploadDocuments.files);
+  });
+}
+
+if (cancelAssignUploadBtn) {
+  cancelAssignUploadBtn.addEventListener("click", () => {
+    pendingQuickUploadFiles = [];
+    assignUploadModal.close();
+  });
+}
+
+if (confirmAssignUploadBtn) {
+  confirmAssignUploadBtn.addEventListener("click", uploadPendingFilesToCase);
+}
+
+if (toggleDarkModeBtn) {
+  toggleDarkModeBtn.addEventListener("click", () => {
+    const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, nextTheme);
+    applyTheme(nextTheme);
   });
 }
 clientNames.addEventListener("input", updateClientStatus);
@@ -600,6 +776,7 @@ saveClientBtn.addEventListener("click", () => {
   }
 
   state.clients.push({ name, address, email, phone });
+  saveClients();
   const currentNames = parseClientNames(clientNames.value);
   currentNames.push(name);
   clientNames.value = currentNames.join(", ");

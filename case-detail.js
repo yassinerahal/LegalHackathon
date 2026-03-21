@@ -1,5 +1,6 @@
 const SESSION_KEY = "nextact_current_user";
 const CASES_KEY = "nextact_cases";
+const THEME_KEY = "nextact_theme";
 
 const caseTitle = document.getElementById("caseTitle");
 const caseStatusBadge = document.getElementById("caseStatusBadge");
@@ -15,7 +16,9 @@ const detailDocPlaceholderName = document.getElementById("detailDocPlaceholderNa
 const detailDocPlaceholderStatus = document.getElementById("detailDocPlaceholderStatus");
 const detailAddDocPlaceholderBtn = document.getElementById("detailAddDocPlaceholderBtn");
 const commentsList = document.getElementById("commentsList");
-const backToCasesBtn = document.getElementById("backToCasesBtn");
+const goDashboardBtn = document.getElementById("goDashboardBtn");
+const loggedInUserName = document.getElementById("loggedInUserName");
+const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const editCaseBtn = document.getElementById("editCaseBtn");
 const editCaseModal = document.getElementById("editCaseModal");
@@ -25,6 +28,7 @@ const editCaseStatus = document.getElementById("editCaseStatus");
 const editCaseDeadline = document.getElementById("editCaseDeadline");
 const editCaseDescription = document.getElementById("editCaseDescription");
 const editCaseComment = document.getElementById("editCaseComment");
+const finishCaseBtn = document.getElementById("finishCaseBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const saveEditBtn = document.getElementById("saveEditBtn");
 const fileContextMenu = document.getElementById("fileContextMenu");
@@ -37,6 +41,26 @@ let contextMenuFile = null;
 
 function requireSession() {
   if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle("dark-mode", theme === "dark");
+  toggleDarkModeBtn.textContent = theme === "dark" ? "☀" : "◐";
+}
+
+function readTheme() {
+  return localStorage.getItem(THEME_KEY) || "light";
+}
+
+function renderLoggedInUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+  } catch (error) {
+    loggedInUserName.textContent = "";
+  }
 }
 
 function readCases() {
@@ -359,8 +383,14 @@ function openEditModal() {
   editCaseModal.showModal();
 }
 
-backToCasesBtn.addEventListener("click", () => {
-  window.location.href = "cases.html";
+goDashboardBtn.addEventListener("click", () => {
+  window.location.href = "index.html";
+});
+
+toggleDarkModeBtn.addEventListener("click", () => {
+  const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+  localStorage.setItem(THEME_KEY, nextTheme);
+  applyTheme(nextTheme);
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -556,7 +586,14 @@ saveEditBtn.addEventListener("click", () => {
   renderCaseDetails(cases[caseIndex]);
 });
 
+finishCaseBtn.addEventListener("click", () => {
+  editCaseStatus.value = "Finished";
+  saveEditBtn.click();
+});
+
 requireSession();
+applyTheme(readTheme());
+renderLoggedInUser();
 const caseId = getCaseIdFromQuery();
 const caseEntry = readCases().find((entry) => entry.id === caseId);
 if (!caseEntry) {

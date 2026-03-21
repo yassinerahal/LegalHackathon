@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NEXTACT - Calendar</title>
+    <title>NEXTACT - Client Profiles</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -11,8 +11,8 @@
       <div class="brand">
         <span class="brand-logo">⏱</span>
         <div>
-          <h1>NEXTACT Calendar</h1>
-          <p>All deadlines in one place</p>
+          <h1>Client Profiles</h1>
+          <p>All client records</p>
         </div>
       </div>
       <div class="topbar-actions">
@@ -26,17 +26,12 @@
     <main class="container">
       <section class="panel">
         <div class="panel-head">
-          <h3>Deadline Calendar</h3>
-          <div class="calendar-controls">
-            <button id="calendarPrevBtn" class="btn-ghost" type="button">Prev</button>
-            <p id="calendarMonthLabel" class="calendar-month-label"></p>
-            <button id="calendarNextBtn" class="btn-ghost" type="button">Next</button>
-          </div>
+          <h3>Clients</h3>
         </div>
-        <div id="calendarGrid" class="calendar-grid"></div>
+        <ul id="clientsList" class="list"></ul>
       </section>
     </main>
 
-    <script src="calendar-page.js"></script>
+    <script src="clients-page.js"></script>
   </body>
 </html>

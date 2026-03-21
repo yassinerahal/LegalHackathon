@@ -9,15 +9,17 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-logo">NA</span>
+        <span class="brand-logo">⏱</span>
         <div>
           <h1>Case Details</h1>
           <p>Single case overview</p>
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="backToCasesBtn" class="btn-ghost" type="button">All Cases</button>
-        <button id="logoutBtn" class="btn-ghost" type="button">Log Out</button>
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
       </div>
     </header>
 
@@ -105,6 +107,7 @@
         <textarea id="editCaseComment" rows="2" placeholder="Optional update comment"></textarea>
 
         <div class="modal-actions">
+          <button id="finishCaseBtn" type="button" class="btn-ghost">Finish Case</button>
           <button id="cancelEditBtn" type="button" class="btn-ghost">Cancel</button>
           <button id="saveEditBtn" type="button" class="btn-primary">Save Changes</button>
         </div>

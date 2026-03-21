@@ -1,16 +1,16 @@
 const SESSION_KEY = "nextact_current_user";
+const CLIENTS_KEY = "nextact_clients";
 const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
-const allCasesList = document.getElementById("allCasesList");
+const clientsList = document.getElementById("clientsList");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 function requireSession() {
-  const sessionRaw = localStorage.getItem(SESSION_KEY);
-  if (!sessionRaw) window.location.href = "login.html";
+  if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
 }
 
 function applyTheme(theme) {
@@ -33,6 +33,17 @@ function renderLoggedInUser() {
   }
 }
 
+function readClients() {
+  const raw = localStorage.getItem(CLIENTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
 function readCases() {
   const raw = localStorage.getItem(CASES_KEY);
   if (!raw) return [];
@@ -44,54 +55,50 @@ function readCases() {
   }
 }
 
-function renderCases() {
+function normalizeName(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function renderClients() {
+  const clients = readClients();
   const cases = readCases();
-  allCasesList.innerHTML = "";
-  if (!cases.length) {
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <div>
-        <strong>No cases yet.</strong>
-        <p class="meta">Create a case from the dashboard to see it here.</p>
-      </div>
+  clientsList.innerHTML = "";
+
+  if (!clients.length) {
+    clientsList.innerHTML = `
+      <li>
+        <div>
+          <strong>No clients yet.</strong>
+          <p class="meta">Add a client from the case form.</p>
+        </div>
+      </li>
     `;
-    allCasesList.appendChild(li);
     return;
   }
 
-  cases.forEach((entry) => {
-    const comments = (entry.comments || []).slice(0, 1);
-    const requiredDocs = entry.requiredDocuments || [];
-    const pendingCount = requiredDocs.filter((doc) => doc.status === "Pending").length;
-    const uploadedCount = (entry.uploadedDocuments || []).length;
-    const badgeClass = entry.status === "Finished" ? "badge success" : "badge";
+  clients.forEach((client) => {
+    const caseCount = cases.filter((entry) =>
+      (entry.clientNames || []).some((name) => normalizeName(name) === normalizeName(client.name))
+    ).length;
+
     const li = document.createElement("li");
-    li.dataset.caseId = entry.id;
+    li.dataset.clientName = client.name;
     li.classList.add("case-row-clickable");
     li.innerHTML = `
       <div>
-        <strong>${entry.title}</strong>
-        <p class="meta">${entry.stage} • ${(entry.clientNames || []).join(", ")}</p>
-        <p class="case-doc-status">Required docs: ${requiredDocs.length} • Pending: ${pendingCount} • Uploaded files: ${uploadedCount}</p>
-        ${
-          comments.length
-            ? `<p class="case-comment">${comments[0].createdAtLabel}: ${comments[0].text}</p>`
-            : '<p class="case-comment">No comments yet.</p>'
-        }
+        <strong>${client.name}</strong>
+        <p class="meta">${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}</p>
       </div>
-      <div class="case-actions">
-        <span class="${badgeClass}">${entry.status || "Active"}</span>
-      </div>
+      <span class="badge">${caseCount} case(s)</span>
     `;
-    allCasesList.appendChild(li);
+    clientsList.appendChild(li);
   });
 }
 
-allCasesList.addEventListener("click", (event) => {
-  const row = event.target.closest("[data-case-id]");
-  if (row) {
-    window.location.href = `case-detail.html?id=${encodeURIComponent(row.dataset.caseId)}`;
-  }
+clientsList.addEventListener("click", (event) => {
+  const row = event.target.closest("[data-client-name]");
+  if (!row) return;
+  window.location.href = `client-detail.html?name=${encodeURIComponent(row.dataset.clientName)}`;
 });
 
 goDashboardBtn.addEventListener("click", () => {
@@ -112,4 +119,4 @@ logoutBtn.addEventListener("click", () => {
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();
-renderCases();
+renderClients();

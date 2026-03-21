@@ -9,36 +9,43 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-logo">NA</span>
+        <span class="brand-logo">⏱</span>
         <div>
           <h1>NEXTACT</h1>
-          <p>Simple legal practice workspace</p>
+          <p>Legal operations dashboard</p>
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="newItemBtn" class="btn-primary">+ Add</button>
-        <button id="logoutBtn" class="btn-ghost">Log Out</button>
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
       </div>
     </header>
 
     <main class="container">
-      <section class="kpi-grid">
-        <article class="card">
-          <p class="label">Active Cases</p>
-          <h2 id="activeCases">0</h2>
-        </article>
-        <article class="card">
-          <p class="label">Clients</p>
-          <h2 id="totalClients">0</h2>
-        </article>
-        <article class="card">
-          <p class="label">Deadlines This Week</p>
-          <h2 id="upcomingDeadlines">0</h2>
-        </article>
-        <article class="card">
-          <p class="label">Pending Documents</p>
-          <h2 id="pendingDocs">0</h2>
-        </article>
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Main Menu</h3>
+        </div>
+        <div class="main-ops-grid">
+          <article class="module-card">
+            <h4>Add a New Case</h4>
+            <p>Create a case with clients, status, notes, and placeholders.</p>
+            <div class="hero-case-action">
+              <button id="newCaseMainBtn" class="btn-primary btn-hero" type="button">+ New Case</button>
+            </div>
+          </article>
+          <article class="module-card">
+            <h4>Upload Document to Case</h4>
+            <p>Attach new documents directly to an existing case.</p>
+            <div id="quickUploadDropZone" class="drop-zone large-drop-zone">
+              <p>Drag & drop files here to upload</p>
+              <p class="field-note">or click to choose files</p>
+              <input id="quickUploadDocuments" type="file" multiple />
+            </div>
+            <p id="quickUploadStatus" class="field-note"></p>
+          </article>
+        </div>
       </section>
 
       <section class="grid-2">
@@ -59,33 +66,29 @@
         </article>
       </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Modules (Build Next)</h3>
-        </div>
-        <div class="module-grid">
-          <article class="module-card">
-            <h4>Case Management</h4>
-            <p>Track case stage, priority, and assigned lawyer.</p>
-          </article>
-          <article class="module-card">
-            <h4>Client Profiles</h4>
-            <p>Central profile with contact info, history, and notes.</p>
-          </article>
-          <article class="module-card">
-            <h4>Document Center</h4>
-            <p>Upload, categorize, and manage legal files securely.</p>
-          </article>
-          <article class="module-card">
-            <h4>Workflow Tasks</h4>
-            <p>Create checklists and assign follow-up actions.</p>
-          </article>
-        </div>
+      <section class="kpi-grid">
+        <article class="card">
+          <p class="label">Active Cases</p>
+          <h2 id="activeCases">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Clients</p>
+          <h2 id="totalClients">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Deadlines This Week</p>
+          <h2 id="upcomingDeadlines">0</h2>
+        </article>
+        <article class="card">
+          <p class="label">Pending Documents</p>
+          <h2 id="pendingDocs">0</h2>
+        </article>
       </section>
     </main>
 
     <dialog id="quickAddModal">
       <form method="dialog" class="modal-form">
+        <button id="closeModalBtn" type="button" class="modal-close-btn" aria-label="Close">x</button>
         <h3 id="modalTitle">Add Case</h3>
 
         <label for="caseName">Case Name</label>
@@ -164,6 +167,19 @@
     <div id="screenDropOverlay" class="screen-drop-overlay hidden">
       <div class="screen-drop-content">Drop documents anywhere to attach to this case</div>
     </div>
+
+    <dialog id="assignUploadModal">
+      <form method="dialog" class="modal-form">
+        <h3>Assign Uploaded Files</h3>
+        <p id="assignUploadFileCount" class="field-note"></p>
+        <label for="assignUploadCaseSelect">Select Case</label>
+        <select id="assignUploadCaseSelect"></select>
+        <div class="modal-actions">
+          <button id="cancelAssignUploadBtn" type="button" class="btn-ghost">Cancel</button>
+          <button id="confirmAssignUploadBtn" type="button" class="btn-primary">Upload to Case</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="app.js"></script>
   </body>
