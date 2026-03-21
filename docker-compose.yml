@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------
+  # 1. THE NODE.JS BACKEND APPLICATION
+  # ---------------------------------------------------------
+  backend:
+    build: ./backend
+    container_name: lexagon_backend
+    ports:
+      - "3000:3000" # Expose port 3000 for frontend access
+    env_file:
+      - .env # Load database and MinIO credentials securely
+    depends_on:
+      - postgres # Ensure database is running before backend starts
+      - minio # Ensure storage is running before backend starts
+    volumes:
+      # Mount local code to container for live development (hot-reloading)
+      - ./backend:/usr/src/app
+      # Prevent local node_modules from overwriting container's node_modules
+      - /usr/src/app/node_modules
+
+  # ---------------------------------------------------------
+  # 2. THE POSTGRESQL DATABASE
+  # ---------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: lexagon_db
+    ports:
+      - "5432:5432" # Standard PostgreSQL port
+    env_file:
+      - .env # Load POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB
+    volumes:
+      # Persist database data on the host machine
+      - postgres_data:/var/lib/postgresql/data
+
+  # ---------------------------------------------------------
+  # 3. THE LOCAL CLOUD STORAGE (MINIO / S3 ALTERNATIVE)
+  # ---------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: lexagon_storage
+    ports:
+      - "9000:9000" # API port (used by the backend to upload files)
+      - "9001:9001" # Web UI port (used by developers to view files)
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER}         # Mapped from .env file
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD} # Mapped from .env file
+    command: server /data --console-address ":9001"
+    volumes:
+      # Persist uploaded documents (PDFs, images) on the host machine
+      - minio_data:/data
+
+# Define the persistent storage volumes
+volumes:
+  postgres_data:
+  minio_data:
