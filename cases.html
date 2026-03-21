@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - All Cases</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo">⏱</span>
+        <div>
+          <h1>All Cases</h1>
+          <p>NEXTACT case overview</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>All Cases</h3>
+        </div>
+        <ul id="allCasesList" class="list"></ul>
+      </section>
+    </main>
+
+    <script src="cases-page.js"></script>
+  </body>
+</html>

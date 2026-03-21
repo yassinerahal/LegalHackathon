@@ -4,6 +4,12 @@ const INITIAL_CASES = [
   { title: "Labor Dispute - Noor Group", stage: "Hearing Prep", clientName: "Noor Group" }
 ];
 
+const DEFAULT_DEADLINES = [
+  { title: "File motion for Vertex case", date: "2026-03-23" },
+  { title: "Client review meeting", date: "2026-03-25" },
+  { title: "Submit compliance checklist", date: "2026-03-27" }
+];
+
 const state = {
   cases: INITIAL_CASES.map((entry, index) => ({
     id: `case-${Date.now()}-${index}`,
@@ -15,11 +21,7 @@ const state = {
     requiredDocuments: [],
     uploadedDocuments: []
   })),
-  deadlines: [
-    { title: "File motion for Vertex case", date: "2026-03-23" },
-    { title: "Client review meeting", date: "2026-03-25" },
-    { title: "Submit compliance checklist", date: "2026-03-27" }
-  ],
+  deadlines: [],
   clients: [
     { name: "Maya Al-Hassan", address: "City Center 10", email: "", phone: "" },
     { name: "Mina Karim", address: "Palm Street 8", email: "", phone: "" },
@@ -34,9 +36,23 @@ const upcomingDeadlines = document.getElementById("upcomingDeadlines");
 const pendingDocs = document.getElementById("pendingDocs");
 const caseList = document.getElementById("caseList");
 const deadlineList = document.getElementById("deadlineList");
+const calendarBtn = document.getElementById("calendarBtn");
+const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
+const newCaseMainBtn = document.getElementById("newCaseMainBtn");
+const loggedInUserName = document.getElementById("loggedInUserName");
+const quickUploadDropZone = document.getElementById("quickUploadDropZone");
+const quickUploadDocuments = document.getElementById("quickUploadDocuments");
+const quickUploadStatus = document.getElementById("quickUploadStatus");
+const assignUploadModal = document.getElementById("assignUploadModal");
+const assignUploadFileCount = document.getElementById("assignUploadFileCount");
+const assignUploadCaseSelect = document.getElementById("assignUploadCaseSelect");
+const cancelAssignUploadBtn = document.getElementById("cancelAssignUploadBtn");
+const confirmAssignUploadBtn = document.getElementById("confirmAssignUploadBtn");
+const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
+const closeModalBtn = document.getElementById("closeModalBtn");
 const newItemBtn = document.getElementById("newItemBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const cancelBtn = document.getElementById("cancelBtn");
@@ -74,7 +90,12 @@ let newUploadNames = new Set();
 let dragDepth = 0;
 let editingCaseId = null;
 let currentDocPlaceholders = [];
+let pendingQuickUploadFiles = [];
 const SESSION_KEY = "nextact_current_user";
+const DEADLINES_KEY = "nextact_deadlines";
+const CASES_KEY = "nextact_cases";
+const CLIENTS_KEY = "nextact_clients";
+const THEME_KEY = "nextact_theme";
 
 function requireSession() {
   const sessionRaw = localStorage.getItem(SESSION_KEY);
@@ -83,7 +104,114 @@ function requireSession() {
   }
 }
 
+function loadDeadlines() {
+  const raw = localStorage.getItem(DEADLINES_KEY);
+  if (!raw) return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+    }
+    return parsed;
+  } catch (error) {
+    return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
+  }
+}
+
+function saveDeadlines() {
+  localStorage.setItem(DEADLINES_KEY, JSON.stringify(state.deadlines));
+}
+
+function loadCases() {
+  const raw = localStorage.getItem(CASES_KEY);
+  if (!raw) {
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  } catch (error) {
+    return INITIAL_CASES.map((entry, index) => ({
+      id: `case-${Date.now()}-${index}`,
+      title: entry.title,
+      stage: entry.stage,
+      clientNames: [entry.clientName],
+      status: "Active",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+  }
+}
+
+function saveCases() {
+  localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
+}
+
+function loadClients() {
+  const raw = localStorage.getItem(CLIENTS_KEY);
+  if (!raw) return [...state.clients];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : [...state.clients];
+  } catch (error) {
+    return [...state.clients];
+  }
+}
+
+function saveClients() {
+  localStorage.setItem(CLIENTS_KEY, JSON.stringify(state.clients));
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle("dark-mode", theme === "dark");
+  toggleDarkModeBtn.textContent = theme === "dark" ? "☀" : "◐";
+  toggleDarkModeBtn.title = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+}
+
+function readTheme() {
+  return localStorage.getItem(THEME_KEY) || "light";
+}
+
+function renderLoggedInUser() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+  } catch (error) {
+    loggedInUserName.textContent = "";
+  }
+}
+
 requireSession();
+state.cases = loadCases();
+state.deadlines = loadDeadlines();
+state.clients = loadClients();
+saveCases();
+saveDeadlines();
+saveClients();
+applyTheme(readTheme());
+renderLoggedInUser();
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -129,6 +257,8 @@ function renderCases() {
   caseList.innerHTML = "";
   state.cases.forEach((entry) => {
     const li = document.createElement("li");
+    li.dataset.caseId = entry.id;
+    li.classList.add("case-row-clickable");
     const newestComments = (entry.comments || []).slice(0, 2);
     const requiredDocs = entry.requiredDocuments || [];
     const pendingCount = requiredDocs.filter((doc) => doc.status === "Pending").length;
@@ -152,7 +282,6 @@ function renderCases() {
       </div>
       <div class="case-actions">
         <span class="${badgeClass}">${entry.status}</span>
-        <button type="button" class="btn-ghost btn-small" data-edit-id="${entry.id}">Edit</button>
       </div>
     `;
     caseList.appendChild(li);
@@ -178,6 +307,73 @@ function render() {
   renderStats();
   renderCases();
   renderDeadlines();
+  renderQuickUploadCaseOptions();
+}
+
+function renderQuickUploadCaseOptions() {
+  if (!assignUploadCaseSelect) return;
+  assignUploadCaseSelect.innerHTML = "";
+  state.cases.forEach((entry) => {
+    const option = document.createElement("option");
+    option.value = entry.id;
+    option.textContent = entry.title;
+    assignUploadCaseSelect.appendChild(option);
+  });
+}
+
+function openAssignUploadModal(files) {
+  pendingQuickUploadFiles = Array.from(files || []);
+  if (!pendingQuickUploadFiles.length) return;
+  renderQuickUploadCaseOptions();
+  assignUploadFileCount.textContent = `${pendingQuickUploadFiles.length} file(s) ready to upload.`;
+  assignUploadModal.showModal();
+}
+
+function uploadPendingFilesToCase() {
+  const selectedCaseId = assignUploadCaseSelect.value;
+  if (!selectedCaseId) {
+    quickUploadStatus.textContent = "Select a case first.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+  if (!pendingQuickUploadFiles.length) {
+    quickUploadStatus.textContent = "No files selected.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  const caseIndex = state.cases.findIndex((entry) => entry.id === selectedCaseId);
+  if (caseIndex < 0) {
+    quickUploadStatus.textContent = "Case not found.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  const existingDocs = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
+  const existingNames = new Set(existingDocs.map((file) => file.name));
+  pendingQuickUploadFiles.forEach((file) => {
+    if (!existingNames.has(file.name)) {
+      existingDocs.push({
+        name: file.name,
+        previewUrl: URL.createObjectURL(file),
+        mimeType: file.type || ""
+      });
+      existingNames.add(file.name);
+    }
+  });
+
+  state.cases[caseIndex] = {
+    ...state.cases[caseIndex],
+    uploadedDocuments: existingDocs
+  };
+  state.documents += pendingQuickUploadFiles.length;
+  saveCases();
+  render();
+  quickUploadDocuments.value = "";
+  quickUploadStatus.textContent = `${pendingQuickUploadFiles.length} file(s) uploaded successfully.`;
+  quickUploadStatus.className = "field-note success";
+  pendingQuickUploadFiles = [];
+  assignUploadModal.close();
 }
 
 function clearClientForm() {
@@ -362,7 +558,9 @@ function updateSelectedFiles(files) {
       currentUploadedDocuments.push({
         name: file.name,
         previewUrl: URL.createObjectURL(file),
-        mimeType: file.type || ""
+        mimeType: file.type || "",
+        uploadedAt: Date.now()
+
       });
       newUploadNames.add(file.name);
       existingNames.add(file.name);
@@ -384,7 +582,7 @@ function openEditCase(caseId) {
   caseStatus.value = entry.status || "Active";
   caseDescription.value = entry.stage || "";
   caseComment.value = "";
-  caseDeadline.value = "";
+  caseDeadline.value = entry.deadline || "";
   selectedFiles = [];
   currentUploadedDocuments = normalizeUploadedDocuments(entry.uploadedDocuments);
   newUploadNames = new Set();
@@ -401,7 +599,7 @@ function openEditCase(caseId) {
   quickAddModal.showModal();
 }
 
-newItemBtn.addEventListener("click", () => {
+newCaseMainBtn.addEventListener("click", () => {
   clearCaseForm();
   quickAddModal.showModal();
 });
@@ -412,18 +610,85 @@ cancelBtn.addEventListener("click", () => {
   quickAddModal.close();
 });
 
+if (closeModalBtn) {
+  closeModalBtn.addEventListener("click", () => {
+    dragDepth = 0;
+    screenDropOverlay.classList.add("hidden");
+    quickAddModal.close();
+  });
+}
+
+quickAddModal.addEventListener("click", (event) => {
+  if (event.target === quickAddModal) {
+    dragDepth = 0;
+    screenDropOverlay.classList.add("hidden");
+    quickAddModal.close();
+  }
+});
+
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
     localStorage.removeItem(SESSION_KEY);
     window.location.href = "login.html";
   });
 }
+
+if (calendarBtn) {
+  calendarBtn.addEventListener("click", () => {
+    window.location.href = "calendar.html";
+  });
+}
+
+if (viewAllCasesBtn) {
+  viewAllCasesBtn.addEventListener("click", () => {
+    window.location.href = "cases.html";
+  });
+}
+
+if (quickUploadDropZone) {
+  quickUploadDropZone.addEventListener("click", () => quickUploadDocuments.click());
+  quickUploadDropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    quickUploadDropZone.classList.add("drag-active");
+  });
+  quickUploadDropZone.addEventListener("dragleave", () => {
+    quickUploadDropZone.classList.remove("drag-active");
+  });
+  quickUploadDropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    quickUploadDropZone.classList.remove("drag-active");
+    openAssignUploadModal(event.dataTransfer.files);
+  });
+  quickUploadDocuments.addEventListener("change", () => {
+    openAssignUploadModal(quickUploadDocuments.files);
+  });
+}
+
+if (cancelAssignUploadBtn) {
+  cancelAssignUploadBtn.addEventListener("click", () => {
+    pendingQuickUploadFiles = [];
+    assignUploadModal.close();
+  });
+}
+
+if (confirmAssignUploadBtn) {
+  confirmAssignUploadBtn.addEventListener("click", uploadPendingFilesToCase);
+}
+
+if (toggleDarkModeBtn) {
+  toggleDarkModeBtn.addEventListener("click", () => {
+    const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, nextTheme);
+    applyTheme(nextTheme);
+  });
+}
 clientNames.addEventListener("input", updateClientStatus);
 
 caseList.addEventListener("click", (event) => {
-  const editBtn = event.target.closest("[data-edit-id]");
-  if (!editBtn) return;
-  openEditCase(editBtn.dataset.editId);
+  const row = event.target.closest("[data-case-id]");
+  if (row) {
+    window.location.href = `case-detail.html?id=${encodeURIComponent(row.dataset.caseId)}`;
+  }
 });
 
 showClientFormBtn.addEventListener("click", () => {
@@ -513,6 +778,7 @@ saveClientBtn.addEventListener("click", () => {
   }
 
   state.clients.push({ name, address, email, phone });
+  saveClients();
   const currentNames = parseClientNames(clientNames.value);
   currentNames.push(name);
   clientNames.value = currentNames.join(", ");
@@ -616,6 +882,7 @@ saveBtn.addEventListener("click", () => {
         ...state.cases[caseIndex],
         title,
         stage: description || "New case",
+        deadline,
         clientNames: resolvedClientNames,
         status,
         comments: newComment ? [newComment, ...existingComments] : existingComments,
@@ -628,6 +895,7 @@ saveBtn.addEventListener("click", () => {
       id: `case-${Date.now()}`,
       title,
       stage: description || "New case",
+      deadline,
       clientNames: resolvedClientNames,
       status,
       comments: newComment ? [newComment] : [],
@@ -640,8 +908,11 @@ saveBtn.addEventListener("click", () => {
         title: `${title} deadline`,
         date: deadline
       });
+      saveDeadlines();
     }
   }
+
+  saveCases();
 
   state.documents += newUploadNames.size;
 

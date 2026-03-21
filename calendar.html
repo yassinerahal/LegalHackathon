@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Calendar</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo">⏱</span>
+        <div>
+          <h1>NEXTACT Calendar</h1>
+          <p>All deadlines in one place</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Deadline Calendar</h3>
+          <div class="calendar-controls">
+            <button id="calendarPrevBtn" class="btn-ghost" type="button">Prev</button>
+            <p id="calendarMonthLabel" class="calendar-month-label"></p>
+            <button id="calendarNextBtn" class="btn-ghost" type="button">Next</button>
+          </div>
+        </div>
+        <div id="calendarGrid" class="calendar-grid"></div>
+      </section>
+    </main>
+
+    <script src="calendar-page.js"></script>
+  </body>
+</html>
