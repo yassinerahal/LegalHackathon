@@ -73,6 +73,15 @@ body.dark-mode {
   gap: 0.8rem;
 }
 
+.brand-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-link:hover .brand-logo {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--line) 45%);
+}
+
 .brand h1 {
   margin: 0;
   font-size: 1.1rem;
