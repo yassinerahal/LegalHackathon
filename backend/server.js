@@ -67,8 +67,8 @@ app.get("/api/cases", async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Failed to fetch cases" });
-  }
+    console.error("Create case error:", error);
+    res.status(500).json({ error: error.message });  }
 });
 
 // Get one case
@@ -186,7 +186,6 @@ app.post("/api/auth/login", async (req, res) => {
 app.post("/api/cases", async (req, res) => {
   try {
     const {
-      aktenzahl,
       name,
       client_id,
       status,
@@ -195,11 +194,10 @@ app.post("/api/cases", async (req, res) => {
     } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO cases (aktenzahl, name, client_id, status, deadline, short_description)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO cases (name, client_id, status, deadline, short_description)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
-        aktenzahl,
         name,
         client_id,
         status || "open",
@@ -210,8 +208,8 @@ app.post("/api/cases", async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to create case" });
+    console.error("Create case error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

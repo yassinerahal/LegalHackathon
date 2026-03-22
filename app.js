@@ -55,6 +55,7 @@ const modalTitle = document.getElementById("modalTitle");
 const closeModalBtn = document.getElementById("closeModalBtn");
 const newItemBtn = document.getElementById("newItemBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const billingBtn = document.getElementById("billingBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
 
@@ -83,7 +84,6 @@ const docPlaceholderName = document.getElementById("docPlaceholderName");
 const docPlaceholderStatus = document.getElementById("docPlaceholderStatus");
 const addDocPlaceholderBtn = document.getElementById("addDocPlaceholderBtn");
 const docPlaceholderList = document.getElementById("docPlaceholderList");
-const caseAktenzahl = document.getElementById("caseAktenzahl");
 
 let selectedFiles = [];
 let currentUploadedDocuments = [];
@@ -113,6 +113,12 @@ function readTheme() {
   return localStorage.getItem(THEME_KEY) || "light";
 }
 
+if (billingBtn) {
+  billingBtn.addEventListener("click", () => {
+    window.location.href = "billing.html";
+  });
+}
+
 function renderLoggedInUser() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -134,7 +140,6 @@ async function initDashboard() {
 
     state.cases = cases.map((entry) => ({
       id: entry.id,
-      aktenzahl: entry.aktenzahl,
       title: entry.name,
       stage: entry.short_description || "No description",
       client_id: entry.client_id,
@@ -815,17 +820,13 @@ document.addEventListener("drop", (event) => {
 });
 
 saveBtn.addEventListener("click", async () => {
-  const aktenzahl = caseAktenzahl.value.trim();
   const name = caseName.value.trim();
   const inputClientNames = parseClientNames(clientNames.value);
   const deadline = caseDeadline.value || null;
   const short_description = caseDescription.value.trim();
   const status = caseStatus.value || "open";
 
-  if (!aktenzahl) {
-    caseAktenzahl.focus();
-    return;
-  }
+
 
   if (!name) {
     caseName.focus();
@@ -850,7 +851,6 @@ saveBtn.addEventListener("click", async () => {
   try {
     if (editingCaseId) {
       const updated = await updateCase(editingCaseId, {
-        aktenzahl,
         name,
         client_id: existingClient.id,
         status,
@@ -863,7 +863,6 @@ saveBtn.addEventListener("click", async () => {
         state.cases[caseIndex] = {
           ...state.cases[caseIndex],
           id: updated.id,
-          aktenzahl: updated.aktenzahl,
           title: updated.name,
           stage: updated.short_description || "No description",
           client_id: updated.client_id,
@@ -874,17 +873,15 @@ saveBtn.addEventListener("click", async () => {
       }
     } else {
       const created = await createCase({
-        aktenzahl,
-        name,
-        client_id: existingClient.id,
-        status,
-        deadline,
-        short_description
-      });
+          name,
+          client_id: existingClient.id,
+          status,
+          deadline,
+          short_description
+    });
 
       state.cases.unshift({
         id: created.id,
-        aktenzahl: created.aktenzahl,
         title: created.name,
         stage: created.short_description || "No description",
         client_id: created.client_id,
