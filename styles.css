@@ -555,6 +555,14 @@ button:hover {
   background: color-mix(in srgb, var(--primary-soft) 28%, var(--card-strong) 72%);
 }
 
+.btn-link-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-weight: 600;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -977,6 +985,20 @@ body.dark-mode .drop-zone-browse {
 .remote-access-meta {
   display: grid;
   gap: 0.15rem;
+}
+
+.remote-portal-main {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.remote-portal-grid {
+  gap: 1.15rem;
+  margin-bottom: 0;
+}
+
+.remote-portal-panel {
+  padding: 1.45rem;
 }
 
 .page-danger-zone {
