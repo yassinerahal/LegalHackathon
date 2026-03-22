@@ -55,6 +55,17 @@ body::before {
   backdrop-filter: blur(18px);
 }
 
+.auth-logo {
+  width: 5.25rem;
+  height: 5.25rem;
+  object-fit: contain;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  padding: 0.34rem;
+  box-shadow: 0 14px 28px rgba(37, 69, 183, 0.12);
+}
+
 .auth-home-link {
   color: var(--primary);
   text-decoration: none;
