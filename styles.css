@@ -798,11 +798,232 @@ body.dark-mode .drop-zone-browse {
   margin-top: 0.6rem;
 }
 
+/* —— Billing & costs page —— */
+.billing-overview-hint {
+  margin: 0 0 0.75rem;
+}
+
+.billing-page .billing-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0;
+}
+
+.billing-kpi h2 {
+  margin: 0.25rem 0 0;
+  font-size: 1.35rem;
+}
+
+.billing-subheading {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.billing-month-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  max-width: 420px;
+}
+
+.billing-month-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 88%, var(--line) 12%);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+
+.billing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+}
+
+.billing-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 140px;
+}
+
+.billing-filter-group label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.billing-filter-range {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.billing-filter-range input[type="date"] {
+  width: auto;
+  min-width: 140px;
+}
+
+.billing-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.billing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.billing-table th,
+.billing-table td {
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.billing-table th {
+  background: color-mix(in srgb, var(--card) 85%, var(--line) 15%);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.billing-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--bg) 40%, var(--card) 60%);
+}
+
+.billing-table tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 6%, var(--card) 94%);
+}
+
+.billing-table-compact td {
+  padding: 0.45rem 0.55rem;
+}
+
+.billing-case-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.billing-case-link:hover {
+  text-decoration: underline;
+}
+
+.billing-add-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.billing-add-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.billing-storage-panel {
+  border-color: color-mix(in srgb, var(--line) 70%, #c45c5c 30%);
+}
+
+.billing-storage-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.billing-storage-title {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.billing-storage-note {
+  margin: 0.25rem 0 0;
+  max-width: 36rem;
+}
+
+.billing-upgrade-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding-left: 1.1rem;
+  padding-right: 1.1rem;
+}
+
+.billing-storage-meter {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.billing-storage-track {
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 85%, var(--bg) 15%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.billing-storage-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3a63f3, #5e7bff);
+  transition: width 0.3s ease;
+}
+
+.billing-storage-fill--near-limit {
+  background: linear-gradient(90deg, #c0392b, #e74c3c);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+body.dark-mode .billing-storage-fill--near-limit {
+  background: linear-gradient(90deg, #922b21, #c0392b);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.billing-storage-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.billing-storage-labels strong {
+  color: var(--text);
+}
+
+.billing-storage-warning {
+  margin: 0.15rem 0 0;
+  color: #c0392b;
+  font-weight: 600;
+}
+
+body.dark-mode .billing-storage-warning {
+  color: #ec7063;
+}
+
 @media (max-width: 860px) {
   .kpi-grid,
   .grid-2,
   .module-grid,
   .main-ops-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .billing-page .billing-overview-grid {
     grid-template-columns: 1fr;
   }
 }

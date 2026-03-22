@@ -44,3 +44,14 @@ CREATE TABLE document_versions (
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Billing / cost tracking (optional future API; UI may use localStorage until wired)
+CREATE TABLE billing_entries (
+    id SERIAL PRIMARY KEY,
+    occurred_on DATE NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    cost_type VARCHAR(80) NOT NULL,
+    case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
