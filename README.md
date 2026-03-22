@@ -39,6 +39,7 @@ Open your terminal in the project root and run:
 
 #### Start all containers in the background
 ```bash
+docker-compose down -v
 docker-compose up -d
 ```
 To verify everything is running, check your Docker Desktop app. You should see nextact_db (PostgreSQL) and nextact_storage (MinIO) with a green "Running" status.
