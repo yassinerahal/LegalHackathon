@@ -210,6 +210,21 @@ app.put("/api/cases/:id", async (req, res) => {
     res.status(500).json({ error: error.message || "Failed to update case" });
   }
 });
+
+app.delete("/api/cases/:id", async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM cases WHERE id = $1 RETURNING id", [req.params.id]);
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Delete case error:", error);
+    res.status(500).json({ error: error.message || "Failed to delete case" });
+  }
+});
 // Signup
 app.post("/api/auth/signup", async (req, res) => {
   try {

@@ -45,6 +45,12 @@ async function updateCase(id, payload) {
   });
 }
 
+async function deleteCase(id) {
+  return apiRequest(`/cases/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
 async function getClients() {
   return apiRequest("/clients");
 }

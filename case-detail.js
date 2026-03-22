@@ -20,6 +20,7 @@ const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const deleteCaseBtn = document.getElementById("deleteCaseBtn");
 const editCaseBtn = document.getElementById("editCaseBtn");
 const editCaseModal = document.getElementById("editCaseModal");
 const editCaseName = document.getElementById("editCaseName");
@@ -405,6 +406,26 @@ function openEditModal() {
   editCaseModal.showModal();
 }
 
+async function handleDeleteCase() {
+  if (!currentCaseId) return;
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this case? This action cannot be undone."
+  );
+  if (!confirmed) return;
+
+  try {
+    await deleteCase(currentCaseId);
+
+    const cases = readCases().filter((entry) => String(entry.id) !== String(currentCaseId));
+    writeCases(cases);
+
+    window.location.href = "cases.html";
+  } catch (error) {
+    window.alert(error.message || "Failed to delete case.");
+  }
+}
+
 goDashboardBtn.addEventListener("click", () => {
   window.location.href = "index.html";
 });
@@ -422,6 +443,7 @@ logoutBtn.addEventListener("click", () => {
 });
 
 editCaseBtn.addEventListener("click", openEditModal);
+deleteCaseBtn.addEventListener("click", handleDeleteCase);
 
 detailDropZone.addEventListener("click", () => detailCaseDocuments.click());
 detailCaseDocuments.addEventListener("change", () => {
