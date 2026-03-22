@@ -595,10 +595,34 @@ finishCaseBtn.addEventListener("click", () => {
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();
-const caseId = getCaseIdFromQuery();
-const caseEntry = readCases().find((entry) => entry.id === caseId);
-if (!caseEntry) {
-  window.location.href = "cases.html";
-} else {
-  renderCaseDetails(caseEntry);
+async function initPage() {
+  const caseId = getCaseIdFromQuery();
+  if (!caseId) {
+    window.location.href = "cases.html";
+    return;
+  }
+
+  try {
+    const entry = await getCaseById(caseId);
+
+    renderCaseDetails({
+      id: entry.id,
+      title: entry.name,
+      stage: entry.short_description || "No description",
+      clientNames: entry.client_name ? [entry.client_name] : [],
+      status: entry.status || "open",
+      deadline: entry.deadline || "",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    });
+  } catch (error) {
+    console.error(error);
+    window.location.href = "cases.html";
+  }
 }
+
+requireSession();
+applyTheme(readTheme());
+renderLoggedInUser();
+initPage();
