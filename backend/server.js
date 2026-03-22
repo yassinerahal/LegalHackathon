@@ -186,26 +186,24 @@ app.post("/api/auth/login", async (req, res) => {
 app.post("/api/cases", async (req, res) => {
   try {
     const {
-      aktenzahl,
-      name,
-      client_id,
-      status,
-      deadline,
-      short_description
+    name,
+     client_id,
+    status,
+    deadline,
+    short_description
     } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO cases (aktenzahl, name, client_id, status, deadline, short_description)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        aktenzahl,
+    `INSERT INTO cases (name, client_id, status, deadline, short_description)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING *`,
+    [
         name,
         client_id,
         status || "open",
         deadline || null,
         short_description || null
-      ]
+    ]
     );
 
     res.status(201).json(result.rows[0]);

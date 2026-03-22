@@ -66,8 +66,7 @@ async function renderCases() {
             ${entry.short_description || "No description"} • ${entry.client_name || "No client"}
           </p>
           <p class="case-doc-status">
-            Aktenzahl: ${entry.aktenzahl} • Deadline: ${entry.deadline || "Not set"}
-          </p>
+            Deadline: ${entry.deadline || "Not set"}          </p>
         </div>
         <div class="case-actions">
           <span class="${badgeClass}">${entry.status || "open"}</span>

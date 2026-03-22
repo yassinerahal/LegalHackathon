@@ -83,7 +83,6 @@ const docPlaceholderName = document.getElementById("docPlaceholderName");
 const docPlaceholderStatus = document.getElementById("docPlaceholderStatus");
 const addDocPlaceholderBtn = document.getElementById("addDocPlaceholderBtn");
 const docPlaceholderList = document.getElementById("docPlaceholderList");
-const caseAktenzahl = document.getElementById("caseAktenzahl");
 
 let selectedFiles = [];
 let currentUploadedDocuments = [];
@@ -815,17 +814,13 @@ document.addEventListener("drop", (event) => {
 });
 
 saveBtn.addEventListener("click", async () => {
-  const aktenzahl = caseAktenzahl.value.trim();
   const name = caseName.value.trim();
   const inputClientNames = parseClientNames(clientNames.value);
   const deadline = caseDeadline.value || null;
   const short_description = caseDescription.value.trim();
   const status = caseStatus.value || "open";
 
-  if (!aktenzahl) {
-    caseAktenzahl.focus();
-    return;
-  }
+
 
   if (!name) {
     caseName.focus();
@@ -874,13 +869,12 @@ saveBtn.addEventListener("click", async () => {
       }
     } else {
       const created = await createCase({
-        aktenzahl,
-        name,
-        client_id: existingClient.id,
-        status,
-        deadline,
-        short_description
-      });
+          name,
+          client_id: existingClient.id,
+          status,
+          deadline,
+          short_description
+    });
 
       state.cases.unshift({
         id: created.id,
