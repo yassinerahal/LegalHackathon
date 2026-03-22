@@ -27,10 +27,13 @@ DB_PASSWORD = (restricted)
 DB_NAME = (restricted)
 ```
 
-#### MinIO Storage Credentials
-MINIO_BUCKET_NAME=legal-documents
-MINIO_ACCESS_KEY=admin
-MINIO_SECRET_KEY=SuperSecretMinioPass123!
+#### LocalStack S3 Storage Credentials (Standard AWS local testing keys)
+```bash
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=legal-documents
+```
 Step 2: Start the Containers
 Open your terminal in the project root and run:
 
@@ -65,21 +68,22 @@ How to connect via DBeaver:
 
 Note: If you encounter a "Connection refused" error, make sure you do not have a local installation of PostgreSQL running on your machine blocking port 5432.
 
-### 3. Document Storage (MinIO)
-We use MinIO as an S3-compatible local cloud storage to store case files (PDFs, images) separately from our relational database.
+### 3. Document Storage (LocalStack S3)
+We use LocalStack to simulate a real AWS S3 cloud environment locally. We specifically chose this over other alternatives (like MinIO) due to its Apache 2.0 license, which ensures full intellectual property (IP) protection and commercial viability for our Legal Tech product without Copyleft restrictions.
 
-#### How to access the MinIO Console:
-1. Open your web browser and navigate to: http://localhost:9001
+How it works:
+- LocalStack runs headlessly (without a web UI) on port 4566.
 
-2. Log in using your MinIO credentials:
+- It perfectly mimics the real AWS S3 API, meaning our backend code is 100% production-ready for the real AWS cloud.
 
-    - Username: admin
+- Automatic Setup: You do not need to manually create any buckets. When you start the Node.js backend, it will automatically connect to LocalStack and initialize the legal-documents bucket for you.
 
-    - Password: SuperSecretMinioPass123!
+Health Check:
+To verify the S3 API is active and running, you can visit this diagnostic URL in your browser:
 
-Initial Setup (One-time only):
-
-Once logged in, navigate to Buckets on the left sidebar and create a new bucket named legal-documents. Our Node.js backend uses this bucket to upload and retrieve files.
+````bash
+http://localhost:4566/_localstack/health
+````
 
 ### 4. Starting the Application
 (Add specific commands here once the backend and frontend scripts are finalized, e.g., npm run dev)
