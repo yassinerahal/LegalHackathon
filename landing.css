@@ -59,7 +59,7 @@ main {
 .landing-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 1rem;
   text-decoration: none;
   color: #fff;
 }
@@ -76,19 +76,38 @@ main {
   font-size: 1.1rem;
 }
 
-.landing-brand strong,
-.landing-brand span {
+.landing-brand-image {
+  width: 12rem;
+  height: auto;
+  object-fit: contain;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.landing-brand-copy {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.landing-brand-copy strong,
+.landing-brand-copy span {
   display: block;
 }
 
-.landing-brand strong {
-  font-size: 1rem;
-  letter-spacing: 0.08em;
+.landing-brand-copy strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.5rem;
+  letter-spacing: 0.1em;
+  color: #ffffff;
 }
 
-.landing-brand span {
+.landing-brand-copy span {
   font-size: 0.88rem;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(243, 210, 128, 0.9);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .landing-nav {
