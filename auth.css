@@ -1,11 +1,13 @@
 :root {
-  --bg: #f4f7fc;
-  --card: #ffffff;
-  --text: #1d2433;
-  --muted: #697286;
-  --line: #dfe5f0;
-  --primary: #3a63f3;
-  --primary-dark: #2f51ca;
+  --bg: #edf2fb;
+  --card: rgba(255, 255, 255, 0.82);
+  --card-strong: rgba(255, 255, 255, 0.94);
+  --text: #182133;
+  --muted: #5d6a82;
+  --line: rgba(129, 146, 181, 0.24);
+  --primary: #3457d5;
+  --primary-dark: #2545b7;
+  --shadow: 0 28px 64px rgba(24, 35, 67, 0.14);
 }
 
 * {
@@ -15,27 +17,42 @@
 body {
   margin: 0;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: linear-gradient(150deg, #f8faff, #eef3ff);
+  background:
+    linear-gradient(180deg, rgba(14, 24, 48, 0.18), rgba(14, 24, 48, 0.52)),
+    url("https://images.unsplash.com/photo-1505664194779-8beaceb93744?auto=format&fit=crop&w=1800&q=80")
+      center/cover fixed no-repeat,
+    linear-gradient(150deg, #f8faff, #eef3ff);
   color: var(--text);
   line-height: 1.45;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.34), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(52, 87, 213, 0.18), transparent 28%);
+  pointer-events: none;
 }
 
 .auth-page {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 1rem;
+  padding: 1.25rem;
 }
 
 .auth-card {
   width: min(430px, 100%);
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 1.25rem;
+  border-radius: 28px;
+  padding: 1.5rem;
   display: grid;
-  gap: 0.55rem;
-  box-shadow: 0 10px 26px rgba(32, 48, 84, 0.08);
+  gap: 0.62rem;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
 }
 
 .auth-home-link {
@@ -47,7 +64,7 @@ body {
 
 h1 {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.8rem;
 }
 
 .muted {
@@ -64,21 +81,25 @@ label {
 input {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.72rem;
+  border-radius: 14px;
+  padding: 0.86rem 0.92rem;
+  background: var(--card-strong);
+  color: var(--text);
   font: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .btn-primary {
   margin-top: 0.25rem;
   border: 0;
-  border-radius: 8px;
-  background: var(--primary);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #4164e1, var(--primary-dark));
   color: #fff;
-  padding: 0.74rem 1rem;
+  padding: 0.84rem 1rem;
   cursor: pointer;
   font-weight: 600;
   min-height: 44px;
+  box-shadow: 0 14px 28px rgba(37, 69, 183, 0.24);
 }
 
 .btn-primary:hover {
