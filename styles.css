@@ -453,6 +453,7 @@ body.dark-mode .case-row-clickable:hover {
   box-shadow: 0 8px 18px rgba(48, 81, 202, 0.22);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -479,6 +480,11 @@ button:hover {
 
 .btn-primary:hover {
   background: var(--primary-dark);
+}
+
+.btn-primary img,
+.drop-zone-browse img {
+  filter: brightness(0) invert(1);
 }
 
 .btn-danger {
@@ -669,6 +675,10 @@ textarea {
   font-weight: 700;
   box-shadow: 0 8px 18px rgba(48, 81, 202, 0.22);
   padding: 0.7rem 1rem;
+  display: inline-flex;      /* ← added */
+  align-items: center;       /* ← added */
+  justify-content: center;   /* ← added */
+  gap: 8px;                  /* ← added */
 }
 
 .drop-zone-browse:hover {
