@@ -390,6 +390,7 @@
 
       /* ─── Logout ────────────────────────────────────── */
       document.getElementById("logoutBtn").addEventListener("click", () => {
+        if (!window.confirm("Are you sure you want to log out?")) return;
         localStorage.removeItem("nextact_current_user");
         window.location.href = "login.html";
       });

@@ -1,5 +1,4 @@
 const SESSION_KEY = "nextact_current_user";
-const DEADLINES_KEY = "nextact_deadlines";
 const THEME_KEY = "nextact_theme";
 
 const calendarGrid = document.getElementById("calendarGrid");
@@ -40,26 +39,21 @@ function renderLoggedInUser() {
   }
 }
 
-function loadDeadlines() {
-  const raw = localStorage.getItem(DEADLINES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    return [];
-  }
-}
-
 function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate()
   ).padStart(2, "0")}`;
 }
 
-function renderCalendar() {
+async function renderCalendar() {
   calendarGrid.innerHTML = "";
-  const deadlines = loadDeadlines();
+
+  let cases = [];
+  try {
+    cases = await getCases();
+  } catch (error) {
+    cases = [];
+  }
 
   const year = calendarCursor.getFullYear();
   const month = calendarCursor.getMonth();
@@ -69,11 +63,12 @@ function renderCalendar() {
   const prevMonthDays = new Date(year, month, 0).getDate();
 
   const byDate = new Map();
-  deadlines.forEach((entry) => {
-    if (!entry.date) return;
-    const events = byDate.get(entry.date) || [];
-    events.push(entry.title);
-    byDate.set(entry.date, events);
+
+  cases.forEach((entry) => {
+    if (!entry.deadline) return;
+    const events = byDate.get(entry.deadline) || [];
+    events.push(entry.name);
+    byDate.set(entry.deadline, events);
   });
 
   ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((label) => {
@@ -84,6 +79,7 @@ function renderCalendar() {
   });
 
   const totalCells = 42;
+
   for (let index = 0; index < totalCells; index += 1) {
     const dayCell = document.createElement("div");
     dayCell.className = "calendar-day";
@@ -107,16 +103,18 @@ function renderCalendar() {
     dayNumber.textContent = String(currentDate.getDate());
     dayCell.appendChild(dayNumber);
 
-    const dayDeadlines = byDate.get(dateKey(currentDate)) || [];
-    if (dayDeadlines.length) {
+    const dayCases = byDate.get(dateKey(currentDate)) || [];
+    if (dayCases.length) {
       const eventList = document.createElement("ul");
       eventList.className = "calendar-events";
-      dayDeadlines.slice(0, 3).forEach((title) => {
+
+      dayCases.slice(0, 3).forEach((title) => {
         const event = document.createElement("li");
         event.className = "calendar-event";
         event.textContent = title;
         eventList.appendChild(event);
       });
+
       dayCell.appendChild(eventList);
     }
 
@@ -129,14 +127,14 @@ function renderCalendar() {
   });
 }
 
-calendarPrevBtn.addEventListener("click", () => {
+calendarPrevBtn.addEventListener("click", async () => {
   calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
-  renderCalendar();
+  await renderCalendar();
 });
 
-calendarNextBtn.addEventListener("click", () => {
+calendarNextBtn.addEventListener("click", async () => {
   calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
-  renderCalendar();
+  await renderCalendar();
 });
 
 goDashboardBtn.addEventListener("click", () => {
@@ -150,6 +148,7 @@ toggleDarkModeBtn.addEventListener("click", () => {
 });
 
 logoutBtn.addEventListener("click", () => {
+  if (!window.confirm("Are you sure you want to log out?")) return;
   localStorage.removeItem(SESSION_KEY);
   window.location.href = "login.html";
 });

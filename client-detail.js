@@ -1,6 +1,4 @@
 const SESSION_KEY = "nextact_current_user";
-const CLIENTS_KEY = "nextact_clients";
-const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
 const clientTitle = document.getElementById("clientTitle");
@@ -35,39 +33,13 @@ function renderLoggedInUser() {
   }
 }
 
-function readClients() {
-  const raw = localStorage.getItem(CLIENTS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function readCases() {
-  const raw = localStorage.getItem(CASES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function normalizeName(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function getClientNameFromQuery() {
+function getClientIdFromQuery() {
   const params = new URLSearchParams(window.location.search);
-  return params.get("name");
+  return params.get("id");
 }
 
 function renderClientPage(client, relatedCases) {
-  clientTitle.textContent = client.name;
+  clientTitle.textContent = client.full_name;
   clientInfo.textContent = `${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}`;
   relatedCasesList.innerHTML = "";
 
@@ -87,13 +59,15 @@ function renderClientPage(client, relatedCases) {
     const li = document.createElement("li");
     li.dataset.caseId = entry.id;
     li.classList.add("case-row-clickable");
-    const badgeClass = entry.status === "Finished" ? "badge success" : "badge";
+    const badgeClass =
+      String(entry.status || "").toLowerCase() === "finished" ? "badge success" : "badge";
+
     li.innerHTML = `
       <div>
-        <strong>${entry.title}</strong>
-        <p class="meta">${entry.stage || "No description"} • Deadline: ${entry.deadline || "Not set"}</p>
+        <strong>${entry.name}</strong>
+        <p class="meta">${entry.short_description || "No description"} • Deadline: ${entry.deadline || "Not set"}</p>
       </div>
-      <span class="${badgeClass}">${entry.status || "Active"}</span>
+      <span class="${badgeClass}">${entry.status || "open"}</span>
     `;
     relatedCasesList.appendChild(li);
   });
@@ -116,22 +90,31 @@ toggleDarkModeBtn.addEventListener("click", () => {
 });
 
 logoutBtn.addEventListener("click", () => {
+  if (!window.confirm("Are you sure you want to log out?")) return;
   localStorage.removeItem(SESSION_KEY);
   window.location.href = "login.html";
 });
 
+async function initPage() {
+  const clientId = getClientIdFromQuery();
+  if (!clientId) {
+    window.location.href = "clients.html";
+    return;
+  }
+
+  try {
+    const [client, relatedCases] = await Promise.all([
+      getClientById(clientId),
+      getClientCases(clientId)
+    ]);
+
+    renderClientPage(client, relatedCases);
+  } catch (error) {
+    window.location.href = "clients.html";
+  }
+}
+
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();
-const queryName = getClientNameFromQuery();
-const clients = readClients();
-const cases = readCases();
-const client = clients.find((entry) => normalizeName(entry.name) === normalizeName(queryName));
-if (!client) {
-  window.location.href = "clients.html";
-} else {
-  const relatedCases = cases.filter((entry) =>
-    (entry.clientNames || []).some((name) => normalizeName(name) === normalizeName(client.name))
-  );
-  renderClientPage(client, relatedCases);
-}
+initPage();

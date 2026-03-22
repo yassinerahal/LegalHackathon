@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 3000
 
 # 7. Der Befehl, um euren Server zu starten
-CMD ["node", "src/server.js"]
+CMD ["node", "server.js"]

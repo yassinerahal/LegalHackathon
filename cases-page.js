@@ -1,5 +1,4 @@
 const SESSION_KEY = "nextact_current_user";
-const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
 const allCasesList = document.getElementById("allCasesList");
@@ -33,58 +32,59 @@ function renderLoggedInUser() {
   }
 }
 
-function readCases() {
-  const raw = localStorage.getItem(CASES_KEY);
-  if (!raw) return [];
+async function renderCases() {
+  allCasesList.innerHTML = "<li><div><strong>Loading cases...</strong></div></li>";
+
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const cases = await getCases();
+
+    allCasesList.innerHTML = "";
+
+    if (!cases.length) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div>
+          <strong>No cases yet.</strong>
+          <p class="meta">Create a case from the dashboard to see it here.</p>
+        </div>
+      `;
+      allCasesList.appendChild(li);
+      return;
+    }
+
+    cases.forEach((entry) => {
+      const badgeClass =
+        String(entry.status || "").toLowerCase() === "finished" ? "badge success" : "badge";
+
+      const li = document.createElement("li");
+      li.dataset.caseId = entry.id;
+      li.classList.add("case-row-clickable");
+      li.innerHTML = `
+        <div>
+          <strong>${entry.name}</strong>
+          <p class="meta">
+            ${entry.short_description || "No description"} • ${entry.client_name || "No client"}
+          </p>
+          <p class="case-doc-status">
+            Aktenzahl: ${entry.aktenzahl} • Deadline: ${entry.deadline || "Not set"}
+          </p>
+        </div>
+        <div class="case-actions">
+          <span class="${badgeClass}">${entry.status || "open"}</span>
+        </div>
+      `;
+      allCasesList.appendChild(li);
+    });
   } catch (error) {
-    return [];
-  }
-}
-
-function renderCases() {
-  const cases = readCases();
-  allCasesList.innerHTML = "";
-  if (!cases.length) {
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <div>
-        <strong>No cases yet.</strong>
-        <p class="meta">Create a case from the dashboard to see it here.</p>
-      </div>
+    allCasesList.innerHTML = `
+      <li>
+        <div>
+          <strong>Failed to load cases.</strong>
+          <p class="meta">${error.message}</p>
+        </div>
+      </li>
     `;
-    allCasesList.appendChild(li);
-    return;
   }
-
-  cases.forEach((entry) => {
-    const comments = (entry.comments || []).slice(0, 1);
-    const requiredDocs = entry.requiredDocuments || [];
-    const pendingCount = requiredDocs.filter((doc) => doc.status === "Pending").length;
-    const uploadedCount = (entry.uploadedDocuments || []).length;
-    const badgeClass = entry.status === "Finished" ? "badge success" : "badge";
-    const li = document.createElement("li");
-    li.dataset.caseId = entry.id;
-    li.classList.add("case-row-clickable");
-    li.innerHTML = `
-      <div>
-        <strong>${entry.title}</strong>
-        <p class="meta">${entry.stage} • ${(entry.clientNames || []).join(", ")}</p>
-        <p class="case-doc-status">Required docs: ${requiredDocs.length} • Pending: ${pendingCount} • Uploaded files: ${uploadedCount}</p>
-        ${
-          comments.length
-            ? `<p class="case-comment">${comments[0].createdAtLabel}: ${comments[0].text}</p>`
-            : '<p class="case-comment">No comments yet.</p>'
-        }
-      </div>
-      <div class="case-actions">
-        <span class="${badgeClass}">${entry.status || "Active"}</span>
-      </div>
-    `;
-    allCasesList.appendChild(li);
-  });
 }
 
 allCasesList.addEventListener("click", (event) => {
@@ -105,6 +105,7 @@ toggleDarkModeBtn.addEventListener("click", () => {
 });
 
 logoutBtn.addEventListener("click", () => {
+  if (!window.confirm("Are you sure you want to log out?")) return;
   localStorage.removeItem(SESSION_KEY);
   window.location.href = "login.html";
 });

@@ -83,6 +83,7 @@ const docPlaceholderName = document.getElementById("docPlaceholderName");
 const docPlaceholderStatus = document.getElementById("docPlaceholderStatus");
 const addDocPlaceholderBtn = document.getElementById("addDocPlaceholderBtn");
 const docPlaceholderList = document.getElementById("docPlaceholderList");
+const caseAktenzahl = document.getElementById("caseAktenzahl");
 
 let selectedFiles = [];
 let currentUploadedDocuments = [];
@@ -92,9 +93,6 @@ let editingCaseId = null;
 let currentDocPlaceholders = [];
 let pendingQuickUploadFiles = [];
 const SESSION_KEY = "nextact_current_user";
-const DEADLINES_KEY = "nextact_deadlines";
-const CASES_KEY = "nextact_cases";
-const CLIENTS_KEY = "nextact_clients";
 const THEME_KEY = "nextact_theme";
 
 function requireSession() {
@@ -104,83 +102,6 @@ function requireSession() {
   }
 }
 
-function loadDeadlines() {
-  const raw = localStorage.getItem(DEADLINES_KEY);
-  if (!raw) return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || !parsed.length) {
-      return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
-    }
-    return parsed;
-  } catch (error) {
-    return DEFAULT_DEADLINES.map((entry) => ({ ...entry }));
-  }
-}
-
-function saveDeadlines() {
-  localStorage.setItem(DEADLINES_KEY, JSON.stringify(state.deadlines));
-}
-
-function loadCases() {
-  const raw = localStorage.getItem(CASES_KEY);
-  if (!raw) {
-    return INITIAL_CASES.map((entry, index) => ({
-      id: `case-${Date.now()}-${index}`,
-      title: entry.title,
-      stage: entry.stage,
-      clientNames: [entry.clientName],
-      status: "Active",
-      comments: [],
-      requiredDocuments: [],
-      uploadedDocuments: []
-    }));
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-    return INITIAL_CASES.map((entry, index) => ({
-      id: `case-${Date.now()}-${index}`,
-      title: entry.title,
-      stage: entry.stage,
-      clientNames: [entry.clientName],
-      status: "Active",
-      comments: [],
-      requiredDocuments: [],
-      uploadedDocuments: []
-    }));
-  } catch (error) {
-    return INITIAL_CASES.map((entry, index) => ({
-      id: `case-${Date.now()}-${index}`,
-      title: entry.title,
-      stage: entry.stage,
-      clientNames: [entry.clientName],
-      status: "Active",
-      comments: [],
-      requiredDocuments: [],
-      uploadedDocuments: []
-    }));
-  }
-}
-
-function saveCases() {
-  localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
-}
-
-function loadClients() {
-  const raw = localStorage.getItem(CLIENTS_KEY);
-  if (!raw) return [...state.clients];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length ? parsed : [...state.clients];
-  } catch (error) {
-    return [...state.clients];
-  }
-}
-
-function saveClients() {
-  localStorage.setItem(CLIENTS_KEY, JSON.stringify(state.clients));
-}
 
 function applyTheme(theme) {
   document.body.classList.toggle("dark-mode", theme === "dark");
@@ -203,15 +124,50 @@ function renderLoggedInUser() {
   }
 }
 
-requireSession();
-state.cases = loadCases();
-state.deadlines = loadDeadlines();
-state.clients = loadClients();
-saveCases();
-saveDeadlines();
-saveClients();
-applyTheme(readTheme());
-renderLoggedInUser();
+async function initDashboard() {
+  requireSession();
+  applyTheme(readTheme());
+  renderLoggedInUser();
+
+  try {
+    const [cases, clients] = await Promise.all([getCases(), getClients()]);
+
+    state.cases = cases.map((entry) => ({
+      id: entry.id,
+      aktenzahl: entry.aktenzahl,
+      title: entry.name,
+      stage: entry.short_description || "No description",
+      client_id: entry.client_id,
+      clientNames: entry.client_name ? [entry.client_name] : [],
+      status: entry.status || "open",
+      deadline: entry.deadline || "",
+      comments: [],
+      requiredDocuments: [],
+      uploadedDocuments: []
+    }));
+
+    state.clients = clients.map((client) => ({
+      id: client.id,
+      name: client.full_name,
+      address: client.address || "",
+      email: client.email || "",
+      phone: client.phone || ""
+    }));
+
+    state.deadlines = state.cases
+      .filter((entry) => entry.deadline)
+      .map((entry) => ({
+        title: `${entry.title} deadline`,
+        date: entry.deadline
+      }));
+
+    render();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+initDashboard();
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -367,7 +323,6 @@ function uploadPendingFilesToCase() {
     uploadedDocuments: existingDocs
   };
   state.documents += pendingQuickUploadFiles.length;
-  saveCases();
   render();
   quickUploadDocuments.value = "";
   quickUploadStatus.textContent = `${pendingQuickUploadFiles.length} file(s) uploaded successfully.`;
@@ -628,6 +583,7 @@ quickAddModal.addEventListener("click", (event) => {
 
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
+    if (!window.confirm("Are you sure you want to log out?")) return;
     localStorage.removeItem(SESSION_KEY);
     window.location.href = "login.html";
   });
@@ -759,34 +715,57 @@ docPlaceholderList.addEventListener("drop", (event) => {
   renderDocPlaceholderList();
 });
 
-saveClientBtn.addEventListener("click", () => {
-  const name = clientFullName.value.trim();
+
+saveClientBtn.addEventListener("click", async () => {
+  const full_name = clientFullName.value.trim();
   const address = clientAddress.value.trim();
   const email = clientEmail.value.trim();
   const phone = clientPhone.value.trim();
 
-  if (!name || !address) {
+  if (!full_name || !address) {
     clientStatus.textContent = "Client name and address are required.";
     clientStatus.className = "field-note error";
     return;
   }
 
-  if (findClientByName(name)) {
+  if (findClientByName(full_name)) {
     clientStatus.textContent = "Client already exists.";
     clientStatus.className = "field-note error";
     return;
   }
 
-  state.clients.push({ name, address, email, phone });
-  saveClients();
-  const currentNames = parseClientNames(clientNames.value);
-  currentNames.push(name);
-  clientNames.value = currentNames.join(", ");
-  clearClientForm();
-  clientForm.classList.add("hidden");
-  clientStatus.textContent = "Client added successfully.";
-  clientStatus.className = "field-note success";
-  renderStats();
+  try {
+    const createdClient = await createClient({
+      full_name,
+      address,
+      email,
+      phone,
+      zip_code: "",
+      city: "",
+      state: ""
+    });
+
+    state.clients.push({
+      id: createdClient.id,
+      name: createdClient.full_name,
+      address: createdClient.address || "",
+      email: createdClient.email || "",
+      phone: createdClient.phone || ""
+    });
+
+    const currentNames = parseClientNames(clientNames.value);
+    currentNames.push(createdClient.full_name);
+    clientNames.value = currentNames.join(", ");
+
+    clearClientForm();
+    clientForm.classList.add("hidden");
+    clientStatus.textContent = "Client added successfully.";
+    clientStatus.className = "field-note success";
+    renderStats();
+  } catch (error) {
+    clientStatus.textContent = error.message || "Failed to create client.";
+    clientStatus.className = "field-note error";
+  }
 });
 
 dropZone.addEventListener("click", () => caseDocuments.click());
@@ -835,15 +814,20 @@ document.addEventListener("drop", (event) => {
   updateSelectedFiles(event.dataTransfer.files);
 });
 
-saveBtn.addEventListener("click", () => {
-  const title = caseName.value.trim();
+saveBtn.addEventListener("click", async () => {
+  const aktenzahl = caseAktenzahl.value.trim();
+  const name = caseName.value.trim();
   const inputClientNames = parseClientNames(clientNames.value);
-  const deadline = caseDeadline.value;
-  const description = caseDescription.value.trim();
-  const status = caseStatus.value;
-  const commentText = caseComment.value.trim();
-  const resolvedClientNames = [];
-  if (!title) {
+  const deadline = caseDeadline.value || null;
+  const short_description = caseDescription.value.trim();
+  const status = caseStatus.value || "open";
+
+  if (!aktenzahl) {
+    caseAktenzahl.focus();
+    return;
+  }
+
+  if (!name) {
     caseName.focus();
     return;
   }
@@ -855,71 +839,79 @@ saveBtn.addEventListener("click", () => {
     return;
   }
 
-  for (const name of inputClientNames) {
-    const existingClient = findClientByName(name);
-    if (!existingClient) {
-      clientStatus.textContent = `Missing client: ${name}. Please add it first.`;
-      clientStatus.className = "field-note error";
-      clientNames.focus();
-      return;
-    }
-    resolvedClientNames.push(existingClient.name);
+  const existingClient = findClientByName(inputClientNames[0]);
+  if (!existingClient) {
+    clientStatus.textContent = `Missing client: ${inputClientNames[0]}. Please add it first.`;
+    clientStatus.className = "field-note error";
+    clientNames.focus();
+    return;
   }
 
-  const newComment = commentText
-    ? {
-        text: commentText,
-        createdAt: Date.now(),
-        createdAtLabel: new Date().toLocaleString()
-      }
-    : null;
-
-  if (editingCaseId) {
-    const caseIndex = state.cases.findIndex((entry) => entry.id === editingCaseId);
-    if (caseIndex >= 0) {
-      const existingComments = state.cases[caseIndex].comments || [];
-      state.cases[caseIndex] = {
-        ...state.cases[caseIndex],
-        title,
-        stage: description || "New case",
-        deadline,
-        clientNames: resolvedClientNames,
+  try {
+    if (editingCaseId) {
+      const updated = await updateCase(editingCaseId, {
+        aktenzahl,
+        name,
+        client_id: existingClient.id,
         status,
-        comments: newComment ? [newComment, ...existingComments] : existingComments,
-        requiredDocuments: currentDocPlaceholders.map((doc) => ({ ...doc })),
-        uploadedDocuments: currentUploadedDocuments.map((file) => ({ ...file }))
-      };
-    }
-  } else {
-    state.cases.unshift({
-      id: `case-${Date.now()}`,
-      title,
-      stage: description || "New case",
-      deadline,
-      clientNames: resolvedClientNames,
-      status,
-      comments: newComment ? [newComment] : [],
-      requiredDocuments: currentDocPlaceholders.map((doc) => ({ ...doc })),
-      uploadedDocuments: currentUploadedDocuments.map((file) => ({ ...file }))
-    });
-
-    if (deadline) {
-      state.deadlines.unshift({
-        title: `${title} deadline`,
-        date: deadline
+        deadline,
+        short_description
       });
-      saveDeadlines();
+
+      const caseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(editingCaseId));
+      if (caseIndex >= 0) {
+        state.cases[caseIndex] = {
+          ...state.cases[caseIndex],
+          id: updated.id,
+          aktenzahl: updated.aktenzahl,
+          title: updated.name,
+          stage: updated.short_description || "No description",
+          client_id: updated.client_id,
+          clientNames: [existingClient.name],
+          status: updated.status || "open",
+          deadline: updated.deadline || ""
+        };
+      }
+    } else {
+      const created = await createCase({
+        aktenzahl,
+        name,
+        client_id: existingClient.id,
+        status,
+        deadline,
+        short_description
+      });
+
+      state.cases.unshift({
+        id: created.id,
+        aktenzahl: created.aktenzahl,
+        title: created.name,
+        stage: created.short_description || "No description",
+        client_id: created.client_id,
+        clientNames: [existingClient.name],
+        status: created.status || "open",
+        deadline: created.deadline || "",
+        comments: [],
+        requiredDocuments: [],
+        uploadedDocuments: []
+      });
     }
+
+    state.deadlines = state.cases
+      .filter((entry) => entry.deadline)
+      .map((entry) => ({
+        title: `${entry.title} deadline`,
+        date: entry.deadline
+      }));
+
+    dragDepth = 0;
+    screenDropOverlay.classList.add("hidden");
+    quickAddModal.close();
+    render();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "Failed to save case.");
   }
-
-  saveCases();
-
-  state.documents += newUploadNames.size;
-
-  dragDepth = 0;
-  screenDropOverlay.classList.add("hidden");
-  quickAddModal.close();
-  render();
 });
 
 renderDocPlaceholderList();

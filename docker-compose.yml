@@ -1,59 +1,53 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # ---------------------------------------------------------
-  # 1. THE NODE.JS BACKEND APPLICATION
-  # ---------------------------------------------------------
   backend:
     build: ./backend
     container_name: nextact_backend
+    restart: unless-stopped
     ports:
-      - "3000:3000" # Expose port 3000 for frontend access
+      - "3000:3000"
     env_file:
-      - .env # Load database and MinIO credentials securely
+      - .env
     depends_on:
-      - postgres # Ensure database is running before backend starts
-      - minio # Ensure storage is running before backend starts
+      - postgres
+      - minio
     volumes:
-      # Mount local code to container for live development (hot-reloading)
       - ./backend:/usr/src/app
-      # Prevent local node_modules from overwriting container's node_modules
       - /usr/src/app/node_modules
 
- # ---------------------------------------------------------
-  # 2. THE POSTGRESQL DATABASE
-  # ---------------------------------------------------------
   postgres:
     image: postgres:15-alpine
     container_name: nextact_db
+    restart: unless-stopped
     ports:
       - "5432:5432"
-    # Here we map your custom .env variables to the names Postgres expects!
+    env_file:
+      - .env
     environment:
-      - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
 
-  # ---------------------------------------------------------
-  # 3. THE LOCAL CLOUD STORAGE (MINIO / S3 ALTERNATIVE)
-  # ---------------------------------------------------------
   minio:
     image: minio/minio:latest
     container_name: nextact_storage
+    restart: unless-stopped
     ports:
-      - "9000:9000" # API port (used by the backend to upload files)
-      - "9001:9001" # Web UI port (used by developers to view files)
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - .env
     environment:
-      - MINIO_ROOT_USER=${MINIO_USER}         # Mapped from .env file
-      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD} # Mapped from .env file
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
-      # Persist uploaded documents (PDFs, images) on the host machine
       - minio_data:/data
 
-# Define the persistent storage volumes
 volumes:
   postgres_data:
   minio_data:
