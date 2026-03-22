@@ -1,12 +1,14 @@
 const API_BASE_URL = "http://localhost:3000/api";
 
 async function apiRequest(path, options = {}) {
+  const headers = {
+    ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+    ...(options.headers || {})
+  };
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    ...options
+    ...options,
+    headers
   });
 
   let data = null;
@@ -75,5 +77,43 @@ async function login(payload) {
   return apiRequest("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append("document", file);
+  return apiRequest("/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
+async function linkCaseDocument(caseId, payload) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function getCaseDocuments(caseId) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents`);
+}
+
+async function createCasePlaceholders(caseId, placeholders) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders`, {
+    method: "POST",
+    body: JSON.stringify(placeholders)
+  });
+}
+
+async function getCasePlaceholders(caseId) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders`);
+}
+
+async function linkPlaceholderToDocument(caseId, placeholderId, s3Key) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders/${encodeURIComponent(placeholderId)}/link`, {
+    method: "PUT",
+    body: JSON.stringify({ s3_key: s3Key })
   });
 }

@@ -75,7 +75,27 @@ function readCases() {
 }
 
 function writeCases(cases) {
-  localStorage.setItem(CASES_KEY, JSON.stringify(cases));
+  localStorage.setItem(
+    CASES_KEY,
+    JSON.stringify(
+      cases.map((entry) => ({
+        ...entry,
+        requiredDocuments: (entry.requiredDocuments || []).map((document) => ({
+          id: document.id,
+          name: document.name,
+          status: document.status || "Pending",
+          linkedS3Key: document.linkedS3Key || "",
+          uploadedFileName: document.uploadedFileName || ""
+        })),
+        uploadedDocuments: (entry.uploadedDocuments || []).map((document) => ({
+          name: document.name,
+          mimeType: document.mimeType || "",
+          s3Key: document.s3Key || "",
+          uploadedAt: document.uploadedAt || ""
+        }))
+      }))
+    )
+  );
 }
 
 function getCurrentCaseAndIndex() {
@@ -87,16 +107,6 @@ function getCurrentCaseAndIndex() {
 function hideContextMenu() {
   fileContextMenu.classList.add("hidden");
   contextMenuFile = null;
-}
-
-function dataUrlToBlob(dataUrl) {
-  const parts = dataUrl.split(",");
-  const mimeMatch = parts[0].match(/data:(.*?);base64/);
-  const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-  const binary = atob(parts[1] || "");
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mimeType });
 }
 
 function removeFileFromCase(fileName) {
@@ -150,18 +160,15 @@ function isImageFile(file) {
 function normalizeUploadedDocuments(documents) {
   return (documents || []).map((item) =>
     typeof item === "string"
-      ? { name: item, previewUrl: "", mimeType: "" }
-      : { name: item.name, previewUrl: item.previewUrl || "", mimeType: item.mimeType || "" }
+      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", uploadedAt: "" }
+      : {
+          name: item.name,
+          previewUrl: item.previewUrl || "",
+          mimeType: item.mimeType || "",
+          s3Key: item.s3Key || "",
+          uploadedAt: item.uploadedAt || ""
+        }
   );
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
 }
 
 async function saveUploadedFilesToCase(files) {
@@ -172,23 +179,33 @@ async function saveUploadedFilesToCase(files) {
 
   const currentDocs = normalizeUploadedDocuments(cases[caseIndex].uploadedDocuments);
   const existing = new Set(currentDocs.map((file) => file.name));
+
   for (const file of files) {
     if (!existing.has(file.name)) {
-      let dataUrl = "";
       try {
-        dataUrl = await fileToDataUrl(file);
+        const uploadData = await uploadFile(file);
+        const linkedDocument = await linkCaseDocument(currentCaseId, {
+          original_name: file.name,
+          s3_key: uploadData.filePath,
+          mime_type: file.type || "application/octet-stream"
+        });
+
+        currentDocs.push({
+          name: linkedDocument.original_name,
+          previewUrl: "",
+          mimeType: linkedDocument.mime_type || file.type || "",
+          s3Key: linkedDocument.s3_key,
+          uploadedAt: linkedDocument.uploaded_at || ""
+        });
+        existing.add(file.name);
       } catch (error) {
-        dataUrl = URL.createObjectURL(file);
+        console.error(`Network error uploading ${file.name}:`, error);
+        alert(error.message || `Failed to upload ${file.name}.`);
       }
-      currentDocs.push({
-        name: file.name,
-        previewUrl: dataUrl,
-        mimeType: file.type || ""
-      });
-      existing.add(file.name);
     }
   }
 
+  // Save the updated list to the local UI view
   cases[caseIndex] = {
     ...cases[caseIndex],
     uploadedDocuments: currentDocs
@@ -221,6 +238,7 @@ function renderCaseDetails(entry) {
       card.draggable = true;
       card.dataset.fileName = file.name;
       card.dataset.previewUrl = file.previewUrl || "";
+      card.dataset.s3Key = file.s3Key || "";
       const thumb = document.createElement("div");
       thumb.className = "uploaded-file-thumb";
       if (isImageFile(file) && file.previewUrl) {
@@ -266,8 +284,11 @@ function renderCaseDetails(entry) {
       const dropField = document.createElement("div");
       dropField.className = "doc-drop-field";
       dropField.dataset.docDropIndex = String(index);
-      if (doc.uploadedFileName) {
-        const linkedFile = uploadedDocs.find((file) => file.name === doc.uploadedFileName);
+      const linkedFile = doc.linkedS3Key
+        ? uploadedDocs.find((file) => file.s3Key === doc.linkedS3Key)
+        : uploadedDocs.find((file) => file.name === doc.uploadedFileName);
+
+      if (linkedFile) {
         if (linkedFile && isImageFile(linkedFile) && linkedFile.previewUrl) {
           const image = document.createElement("img");
           image.className = "doc-drop-thumb-image";
@@ -281,7 +302,7 @@ function renderCaseDetails(entry) {
           dropField.appendChild(typeLabel);
         }
         const linkedText = document.createElement("span");
-        linkedText.textContent = `Linked: ${doc.uploadedFileName}`;
+        linkedText.textContent = `Linked: ${linkedFile.name}`;
         dropField.appendChild(linkedText);
       } else {
         dropField.textContent = "Drop an uploaded file here";
@@ -324,7 +345,7 @@ function renderCaseDetails(entry) {
   }
 }
 
-function addRequiredPlaceholder() {
+async function addRequiredPlaceholder() {
   const name = detailDocPlaceholderName.value.trim();
   const status = detailDocPlaceholderStatus.value;
   if (!name) {
@@ -334,41 +355,68 @@ function addRequiredPlaceholder() {
 
   const { cases, index } = getCurrentCaseAndIndex();
   if (index < 0) return;
-  const currentRequired = cases[index].requiredDocuments || [];
-  currentRequired.push({
-    id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name,
-    status
-  });
-  cases[index] = {
-    ...cases[index],
-    requiredDocuments: currentRequired
-  };
-  writeCases(cases);
-  detailDocPlaceholderName.value = "";
-  detailDocPlaceholderStatus.value = "Pending";
-  renderCaseDetails(cases[index]);
+
+  try {
+    const created = await createCasePlaceholders(currentCaseId, [{ name, status }]);
+    const currentRequired = [...(cases[index].requiredDocuments || [])];
+
+    created.forEach((placeholder) => {
+      currentRequired.push({
+        id: placeholder.id,
+        name: placeholder.name,
+        status: placeholder.status || "Pending",
+        linkedS3Key: placeholder.linked_s3_key || "",
+        uploadedFileName: ""
+      });
+    });
+
+    cases[index] = {
+      ...cases[index],
+      requiredDocuments: currentRequired
+    };
+    writeCases(cases);
+    detailDocPlaceholderName.value = "";
+    detailDocPlaceholderStatus.value = "Pending";
+    renderCaseDetails(cases[index]);
+  } catch (error) {
+    console.error("Failed to create placeholder:", error);
+    window.alert(error.message || "Failed to create placeholder.");
+  }
 }
 
-function linkUploadedToPlaceholder(fileName, placeholderIndex) {
+async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
   const { cases, index } = getCurrentCaseAndIndex();
   if (index < 0) return;
   const uploadedDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
-  if (!uploadedDocs.some((file) => file.name === fileName)) return;
+  if (!documentMeta?.s3Key || !uploadedDocs.some((file) => file.s3Key === documentMeta.s3Key)) return;
 
   const required = [...(cases[index].requiredDocuments || [])];
   if (!required[placeholderIndex]) return;
-  required[placeholderIndex] = {
-    ...required[placeholderIndex],
-    status: "Uploaded",
-    uploadedFileName: fileName
-  };
-  cases[index] = {
-    ...cases[index],
-    requiredDocuments: required
-  };
-  writeCases(cases);
-  renderCaseDetails(cases[index]);
+
+  try {
+    const updatedPlaceholder = await linkPlaceholderToDocument(
+      currentCaseId,
+      required[placeholderIndex].id,
+      documentMeta.s3Key
+    );
+
+    required[placeholderIndex] = {
+      ...required[placeholderIndex],
+      id: updatedPlaceholder.id,
+      status: updatedPlaceholder.status || "Uploaded",
+      linkedS3Key: updatedPlaceholder.linked_s3_key || documentMeta.s3Key,
+      uploadedFileName: documentMeta.name
+    };
+    cases[index] = {
+      ...cases[index],
+      requiredDocuments: required
+    };
+    writeCases(cases);
+    renderCaseDetails(cases[index]);
+  } catch (error) {
+    console.error("Failed to link placeholder:", error);
+    window.alert(error.message || "Failed to link placeholder.");
+  }
 }
 
 function openEditModal() {
@@ -422,6 +470,13 @@ detailDropZone.addEventListener("drop", (event) => {
 uploadedDocumentsGrid.addEventListener("dragstart", (event) => {
   const fileCard = event.target.closest(".uploaded-file-box");
   if (!fileCard) return;
+  event.dataTransfer.setData(
+    "application/json",
+    JSON.stringify({
+      name: fileCard.dataset.fileName || "",
+      s3Key: fileCard.dataset.s3Key || ""
+    })
+  );
   event.dataTransfer.setData("text/plain", fileCard.dataset.fileName || "");
 });
 
@@ -449,7 +504,8 @@ uploadedDocumentsGrid.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   contextMenuFile = {
     name: fileCard.dataset.fileName || "",
-    previewUrl: fileCard.dataset.previewUrl || ""
+    previewUrl: fileCard.dataset.previewUrl || "",
+    s3Key: fileCard.dataset.s3Key || ""
   };
   fileContextMenu.style.left = `${event.clientX}px`;
   fileContextMenu.style.top = `${event.clientY}px`;
@@ -473,19 +529,13 @@ ctxDownloadBtn.addEventListener("click", () => {
 });
 
 ctxCopyBtn.addEventListener("click", async () => {
-  if (!contextMenuFile || !contextMenuFile.previewUrl) return;
+  if (!contextMenuFile) return;
   try {
-    if (navigator.clipboard && window.ClipboardItem) {
-      const blob = dataUrlToBlob(contextMenuFile.previewUrl);
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-    } else if (navigator.clipboard) {
-      await navigator.clipboard.writeText(contextMenuFile.previewUrl);
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(contextMenuFile.s3Key || contextMenuFile.name || "");
     }
   } catch (error) {
-    // Fallback: copy the data URL as text.
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(contextMenuFile.previewUrl);
-    }
+    console.error("Failed to copy document reference:", error);
   }
   hideContextMenu();
 });
@@ -514,10 +564,25 @@ requiredDocsList.addEventListener("drop", (event) => {
   if (!dropField) return;
   event.preventDefault();
   dropField.classList.remove("drag-active");
-  const fileName = event.dataTransfer.getData("text/plain");
   const placeholderIndex = Number(dropField.dataset.docDropIndex);
-  if (!fileName || Number.isNaN(placeholderIndex)) return;
-  linkUploadedToPlaceholder(fileName, placeholderIndex);
+  if (Number.isNaN(placeholderIndex)) return;
+
+  let documentMeta = null;
+  try {
+    const payload = event.dataTransfer.getData("application/json");
+    documentMeta = payload ? JSON.parse(payload) : null;
+  } catch (error) {
+    documentMeta = null;
+  }
+
+  if (!documentMeta?.s3Key) {
+    const fileName = event.dataTransfer.getData("text/plain");
+    const uploadedDocs = normalizeUploadedDocuments(readCases().find((entry) => entry.id === currentCaseId)?.uploadedDocuments);
+    documentMeta = uploadedDocs.find((file) => file.name === fileName) || null;
+  }
+
+  if (!documentMeta?.s3Key) return;
+  linkUploadedToPlaceholder(documentMeta, placeholderIndex);
 });
 
 requiredDocsList.addEventListener("click", (event) => {
@@ -603,19 +668,53 @@ async function initPage() {
   }
 
   try {
-    const entry = await getCaseById(caseId);
+    const [entry, documents, placeholders] = await Promise.all([
+      getCaseById(caseId),
+      getCaseDocuments(caseId),
+      getCasePlaceholders(caseId)
+    ]);
+    const storedCase = readCases().find((item) => String(item.id) === String(caseId));
 
-    renderCaseDetails({
+    const mergedCase = {
       id: entry.id,
       title: entry.name,
       stage: entry.short_description || "No description",
       clientNames: entry.client_name ? [entry.client_name] : [],
       status: entry.status || "open",
       deadline: entry.deadline || "",
-      comments: [],
-      requiredDocuments: [],
-      uploadedDocuments: []
-    });
+      comments: storedCase?.comments || [],
+      requiredDocuments: placeholders.map((placeholder) => {
+        const linkedDocument = documents.find((document) => document.s3_key === placeholder.linked_s3_key);
+        return {
+          id: placeholder.id,
+          name: placeholder.name,
+          status: placeholder.status || "Pending",
+          linkedS3Key: placeholder.linked_s3_key || "",
+          uploadedFileName: linkedDocument?.original_name || ""
+        };
+      }),
+      uploadedDocuments: documents.map((document) => ({
+        name: document.original_name,
+        previewUrl: "",
+        mimeType: document.mime_type || "",
+        s3Key: document.s3_key,
+        uploadedAt: document.uploaded_at || ""
+      }))
+    };
+
+    const allCases = readCases();
+    const existingIndex = allCases.findIndex((item) => String(item.id) === String(caseId));
+    if (existingIndex >= 0) {
+      allCases[existingIndex] = {
+        ...allCases[existingIndex],
+        ...mergedCase
+      };
+    } else {
+      allCases.push(mergedCase);
+    }
+    writeCases(allCases);
+
+    renderCaseDetails(mergedCase);
   } catch (error) {
     console.error(error);
     window.location.href = "cases.html";

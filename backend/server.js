@@ -3,11 +3,32 @@ const express = require("express");
 const pool = require("./db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const { PutObjectCommand } = require("@aws-sdk/client-s3");
+const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
 require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+async function caseExists(caseId) {
+  const result = await pool.query("SELECT id FROM cases WHERE id = $1", [caseId]);
+  return result.rows.length > 0;
+}
+
+async function placeholderBelongsToCase(caseId, placeholderId) {
+  const result = await pool.query(
+    "SELECT id FROM case_placeholders WHERE id = $1 AND case_id = $2",
+    [placeholderId, caseId]
+  );
+  return result.rows.length > 0;
+}
+
+// ---------------------------------------------------------
+// MULTER CONFIGURATION FOR S3 UPLOADS
+// ---------------------------------------------------------
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Health check
 app.get("/api/health", async (req, res) => {
@@ -17,6 +38,228 @@ app.get("/api/health", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Database connection failed" });
+  }
+});
+
+// ---------------------------------------------------------
+// FILE UPLOAD ROUTE (LOCALSTACK S3)
+// ---------------------------------------------------------
+app.post("/api/upload", upload.single("document"), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    await ensureStorageReady();
+
+    const uniqueFileName = `${Date.now()}-${file.originalname}`;
+
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: uniqueFileName,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    });
+
+    await s3Client.send(command);
+
+    res.status(200).json({
+      message: "File uploaded successfully",
+      filePath: uniqueFileName
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+    res.status(500).json({
+      error: `Failed to upload file to S3: ${error.name || "UnknownError"}${error.message ? ` - ${error.message}` : ""}`
+    });
+  }
+});
+
+// Save document metadata to PostgreSQL
+app.post("/api/cases/:id/documents", async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    const { original_name, s3_key, mime_type } = req.body;
+
+    if (!original_name || !s3_key) {
+      return res.status(400).json({ error: "original_name and s3_key are required" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO case_documents (case_id, original_name, s3_key, mime_type)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [caseId, original_name, s3_key, mime_type]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Database insert error:", error);
+    res.status(500).json({ error: "Failed to save document info to database" });
+  }
+});
+
+app.get("/api/cases/:id/documents", async (req, res) => {
+  try {
+    const caseId = req.params.id;
+
+    if (!/^\d+$/.test(String(caseId))) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    // Return only the documents that are explicitly linked to this case.
+    const result = await pool.query(
+      `
+      SELECT id, case_id, original_name, s3_key, mime_type, uploaded_at
+      FROM case_documents
+      WHERE case_id = $1
+      ORDER BY uploaded_at DESC, id DESC
+      `,
+      [caseId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Fetch case documents error:", error);
+    res.status(500).json({ error: "Failed to fetch case documents" });
+  }
+});
+
+app.post("/api/cases/:id/placeholders", async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    const placeholders = Array.isArray(req.body) ? req.body : [];
+
+    if (!/^\d+$/.test(String(caseId))) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    if (!placeholders.length) {
+      return res.status(400).json({ error: "At least one placeholder is required" });
+    }
+
+    const values = [];
+    const params = [];
+
+    placeholders.forEach((placeholder, index) => {
+      const offset = index * 4;
+      params.push(
+        caseId,
+        String(placeholder.name || "").trim(),
+        String(placeholder.status || "Pending"),
+        placeholder.linked_s3_key || null
+      );
+      values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+    });
+
+    if (params.some((value, index) => index % 4 === 1 && !value)) {
+      return res.status(400).json({ error: "Each placeholder requires a name" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO case_placeholders (case_id, name, status, linked_s3_key)
+      VALUES ${values.join(", ")}
+      RETURNING *
+      `,
+      params
+    );
+
+    res.status(201).json(result.rows);
+  } catch (error) {
+    console.error("Create placeholders error:", error);
+    res.status(500).json({ error: "Failed to create placeholders" });
+  }
+});
+
+app.get("/api/cases/:id/placeholders", async (req, res) => {
+  try {
+    const caseId = req.params.id;
+
+    if (!/^\d+$/.test(String(caseId))) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, case_id, name, status, linked_s3_key, created_at
+      FROM case_placeholders
+      WHERE case_id = $1
+      ORDER BY created_at ASC, id ASC
+      `,
+      [caseId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Fetch placeholders error:", error);
+    res.status(500).json({ error: "Failed to fetch placeholders" });
+  }
+});
+
+app.put("/api/cases/:id/placeholders/:placeholderId/link", async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    const placeholderId = req.params.placeholderId;
+    const { s3_key } = req.body;
+
+    if (!/^\d+$/.test(String(caseId)) || !/^\d+$/.test(String(placeholderId))) {
+      return res.status(400).json({ error: "Invalid case or placeholder id" });
+    }
+
+    if (!s3_key) {
+      return res.status(400).json({ error: "s3_key is required" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    if (!(await placeholderBelongsToCase(caseId, placeholderId))) {
+      return res.status(404).json({ error: "Placeholder not found for this case" });
+    }
+
+    const documentResult = await pool.query(
+      "SELECT id FROM case_documents WHERE case_id = $1 AND s3_key = $2",
+      [caseId, s3_key]
+    );
+
+    if (!documentResult.rows.length) {
+      return res.status(404).json({ error: "Document not found for this case" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE case_placeholders
+      SET status = 'Uploaded',
+          linked_s3_key = $1
+      WHERE id = $2 AND case_id = $3
+      RETURNING *
+      `,
+      [s3_key, placeholderId, caseId]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Link placeholder error:", error);
+    res.status(500).json({ error: "Failed to link placeholder" });
   }
 });
 
@@ -66,9 +309,9 @@ app.get("/api/cases", async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error(error);
-    console.error("Create case error:", error);
-    res.status(500).json({ error: error.message });  }
+    console.error("Fetch cases error:", error);
+    res.status(500).json({ error: error.message });  
+  }
 });
 
 // Get one case
@@ -96,6 +339,7 @@ app.get("/api/cases/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch case" });
   }
 });
+
 // Signup
 app.post("/api/auth/signup", async (req, res) => {
   try {
@@ -182,6 +426,7 @@ app.post("/api/auth/login", async (req, res) => {
     res.status(500).json({ error: "Login failed." });
   }
 });
+
 // Create case
 app.post("/api/cases", async (req, res) => {
   try {
@@ -214,6 +459,9 @@ app.post("/api/cases", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+
+// Start server and initialize LocalStack S3 bucket
+app.listen(PORT, async () => {
   console.log(`Backend running on port ${PORT}`);
+  await initStorage();
 });
