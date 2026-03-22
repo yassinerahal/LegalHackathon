@@ -10,8 +10,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - minio
+      - postgres # Ensure database is running before backend starts
+      - localstack # Ensure storage is running before backend starts
     volumes:
       - ./backend:/usr/src/app
       - /usr/src/app/node_modules
@@ -32,22 +32,27 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
 
-  minio:
-    image: minio/minio:latest
+ # ---------------------------------------------------------
+  # 3. THE LOCAL CLOUD STORAGE (LocalStack - Apache 2.0)
+  # ---------------------------------------------------------
+  localstack:
+    image: localstack/localstack:latest
     container_name: nextact_storage
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    env_file:
-      - .env
+      - "4566:4566" # This is the port for the S3 API
+      - "4510-4559:4510-4559" # Required internal ports
     environment:
-      MINIO_ROOT_USER: ${MINIO_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
-    command: server /data --console-address ":9001"
+      # We tell LocalStack to ONLY boot up the S3 simulation
+      - SERVICES=s3
+      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
-      - minio_data:/data
+      # LocalStack needs access to the Docker socket to run properly
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist the S3 data locally
+      - storage_data:/var/lib/localstack/volume
 
+# At the very bottom of your file, update the volumes list:
 volumes:
   postgres_data:
-  minio_data:
+  storage_data:
