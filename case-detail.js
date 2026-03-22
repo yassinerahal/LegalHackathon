@@ -791,7 +791,6 @@ finishCaseBtn.addEventListener("click", () => {
   editCaseStatus.value = "Finished";
   saveEditBtn.click();
 });
-
 async function initPage() {
   const caseId = getCaseIdFromQuery();
   if (!caseId) {
@@ -805,11 +804,10 @@ async function initPage() {
       getCaseDocuments(caseId),
       getCasePlaceholders(caseId)
     ]);
+
     const storedCase = readCases().find((item) => String(item.id) === String(caseId));
 
-    const mergedCase = {
-    const entry = await getCaseById(caseId);
-    const mergedEntry = mergeCaseIntoLocal({
+    const mergedCase = mergeCaseIntoLocal({
       id: entry.id,
       client_id: entry.client_id,
       title: entry.name,
@@ -818,14 +816,14 @@ async function initPage() {
       status: entry.status || "open",
       deadline: entry.deadline || "",
       comments: storedCase?.comments || [],
-      requiredDocuments: placeholders.map((placeholder) => {
-        return {
-          id: placeholder.id,
-          name: placeholder.name,
-          status: placeholder.status || "Pending",
-          attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
-        };
-      }),
+      requiredDocuments: placeholders.map((placeholder) => ({
+        id: placeholder.id,
+        name: placeholder.name,
+        status: placeholder.status || "Pending",
+        attachedFiles: Array.isArray(placeholder.attached_files)
+          ? placeholder.attached_files
+          : []
+      })),
       uploadedDocuments: documents.map((document) => ({
         name: document.original_name,
         previewUrl: "",
@@ -833,27 +831,14 @@ async function initPage() {
         s3Key: document.s3_key,
         uploadedAt: document.uploaded_at || ""
       }))
-    };
-
-    const allCases = readCases();
-    const existingIndex = allCases.findIndex((item) => String(item.id) === String(caseId));
-    if (existingIndex >= 0) {
-      allCases[existingIndex] = {
-        ...allCases[existingIndex],
-        ...mergedCase
-      };
-    } else {
-      allCases.push(mergedCase);
-    }
-    writeCases(allCases);
+    });
 
     renderCaseDetails(mergedCase);
   } catch (error) {
-    console.error(error);
+    console.error("Failed to load case detail:", error);
     window.location.href = "cases.html";
   }
 }
-
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();

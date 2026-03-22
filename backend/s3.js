@@ -1,7 +1,17 @@
+const fs = require("fs");
 const { CreateBucketCommand, HeadBucketCommand, S3Client } = require("@aws-sdk/client-s3");
 
 const bucketName = process.env.S3_BUCKET_NAME || "legal-documents";
-const s3Endpoint = process.env.S3_ENDPOINT || "http://localstack:4566";
+
+function runningInDocker() {
+  return fs.existsSync("/.dockerenv");
+}
+
+function getDefaultS3Endpoint() {
+  return runningInDocker() ? "http://localstack:4566" : "http://localhost:4566";
+}
+
+const s3Endpoint = process.env.S3_ENDPOINT || getDefaultS3Endpoint();
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",

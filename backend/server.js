@@ -7,7 +7,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
-const QRCode = require("qrcode");
+let QRCode = null;
 const pool = require("./db");
 require("dotenv").config();
 
@@ -251,6 +251,23 @@ function buildSetupLink(req, token) {
   return `${req.protocol}://${req.get("host")}/remote-setup.html?token=${encodeURIComponent(token)}`;
 }
 
+async function buildQrCodeDataUrl(value) {
+  if (!QRCode) {
+    try {
+      // Keep QR generation optional so a missing package never takes down the whole API.
+      QRCode = require("qrcode");
+    } catch (error) {
+      console.warn("QR code package not available, continuing without QR output.");
+      return null;
+    }
+  }
+
+  return QRCode.toDataURL(value, {
+    width: 240,
+    margin: 1
+  });
+}
+
 async function ensureRemoteAccessSchema() {
   await pool.query(`
     ALTER TABLE users
@@ -281,6 +298,30 @@ async function ensureRemoteAccessSchema() {
       status VARCHAR(20) NOT NULL DEFAULT 'active',
       expires_at TIMESTAMP NOT NULL,
       used_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Older Postgres volumes may predate the document upload feature, so create
+  // these tables at startup as a safe forward migration.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS case_documents (
+      id SERIAL PRIMARY KEY,
+      case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
+      original_name VARCHAR(255) NOT NULL,
+      s3_key VARCHAR(500) UNIQUE NOT NULL,
+      mime_type VARCHAR(100),
+      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS case_placeholders (
+      id SERIAL PRIMARY KEY,
+      case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      status VARCHAR(50) DEFAULT 'Pending',
+      attached_files JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -730,10 +771,7 @@ app.post("/api/clients/:id/remote-access", requireStaffAuth, async (req, res) =>
     );
 
     const setupLink = buildSetupLink(req, rawToken);
-    const qrCodeDataUrl = await QRCode.toDataURL(setupLink, {
-      width: 240,
-      margin: 1
-    });
+    const qrCodeDataUrl = await buildQrCodeDataUrl(setupLink);
 
     res.json({
       setup_link: setupLink,
