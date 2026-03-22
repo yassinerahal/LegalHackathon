@@ -1,5 +1,5 @@
 (function () {
-  const SESSION_KEY = "nextact_current_user";
+  const AUTH_SESSION_KEY = "nextact_current_user";
 
   function setMessage(text, isSuccess) {
     const message = document.getElementById("authMessage");
@@ -10,6 +10,31 @@
 
   function normalizeEmail(email) {
     return email.trim().toLowerCase();
+  }
+
+  function persistSession(result) {
+    localStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify({
+        id: result.user.id,
+        name: result.user.full_name,
+        email: result.user.email || "",
+        role: result.user.role || "staff",
+        clientId: result.user.client_id || null,
+        token: result.token || ""
+      })
+    );
+  }
+
+  function prefillRemoteUserEmail() {
+    const emailInput = document.getElementById("loginEmail");
+    if (!emailInput) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get("email");
+    if (email) {
+      emailInput.value = email;
+    }
   }
 
   async function createAccount() {
@@ -27,27 +52,17 @@
       return;
     }
 
-    if (password.length < 6) {
-      setMessage("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
       return;
     }
 
     try {
       const result = await signup({ full_name, email, password });
-
-      localStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({
-          id: result.user.id,
-          name: result.user.full_name,
-          email: result.user.email,
-          token: result.token || ""
-        })
-      );
-
+      persistSession(result);
       setMessage("Account created. Redirecting...", true);
       window.setTimeout(() => {
-        window.location.href = "index.html";
+        window.location.href = getSessionHomePath(getStoredSession());
       }, 500);
     } catch (error) {
       setMessage(error.message || "Signup failed.");
@@ -68,21 +83,11 @@
     }
 
     try {
-      const result = await login({ email, password });
-
-      localStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({
-          id: result.user.id,
-          name: result.user.full_name,
-          email: result.user.email,
-          token: result.token || ""
-        })
-      );
-
+      const result = await login({ identifier: email, password });
+      persistSession(result);
       setMessage("Logged in. Redirecting...", true);
       window.setTimeout(() => {
-        window.location.href = "index.html";
+        window.location.href = getSessionHomePath(getStoredSession());
       }, 350);
     } catch (error) {
       setMessage(error.message || "Invalid email or password.");
@@ -90,7 +95,7 @@
   }
 
   function protectAuthPages() {
-    const session = localStorage.getItem(SESSION_KEY);
+    const session = getStoredSession();
     const isAuthPage =
       window.location.pathname.endsWith("/login.html") ||
       window.location.pathname.endsWith("/signup.html") ||
@@ -98,11 +103,12 @@
       window.location.pathname.endsWith("signup.html");
 
     if (session && isAuthPage) {
-      window.location.href = "index.html";
+      window.location.href = getSessionHomePath(session);
     }
   }
 
   protectAuthPages();
+  prefillRemoteUserEmail();
 
   const signupBtn = document.getElementById("signupBtn");
   if (signupBtn) signupBtn.addEventListener("click", createAccount);

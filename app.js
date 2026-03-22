@@ -98,10 +98,7 @@ const SESSION_KEY = "nextact_current_user";
 const THEME_KEY = "nextact_theme";
 
 function requireSession() {
-  const sessionRaw = localStorage.getItem(SESSION_KEY);
-  if (!sessionRaw) {
-    window.location.href = "login.html";
-  }
+  return requireStaffSession();
 }
 
 
@@ -648,7 +645,7 @@ quickAddModal.addEventListener("click", (event) => {
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
     if (!window.confirm("Are you sure you want to log out?")) return;
-    localStorage.removeItem(SESSION_KEY);
+    clearStoredSession();
     window.location.href = "login.html";
   });
 }

@@ -41,7 +41,7 @@ let currentCaseId = null;
 let contextMenuFile = null;
 
 function requireSession() {
-  if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
+  return requireStaffSession();
 }
 
 function applyTheme(theme) {
@@ -438,7 +438,7 @@ toggleDarkModeBtn.addEventListener("click", () => {
 
 logoutBtn.addEventListener("click", () => {
   if (!window.confirm("Are you sure you want to log out?")) return;
-  localStorage.removeItem(SESSION_KEY);
+  clearStoredSession();
   window.location.href = "login.html";
 });
 

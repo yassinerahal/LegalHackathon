@@ -52,8 +52,10 @@
           <input id="clientState" type="text" />
 
           <p id="clientInfo" class="field-note"></p>
+          <p id="remoteAccessInfo" class="field-note"></p>
 
           <div class="modal-actions">
+            <button id="grantRemoteAccessBtn" type="button" class="btn-ghost">Grant Remote Access</button>
             <button id="deleteClientBtn" type="button" class="btn-danger">Delete Client</button>
             <button id="saveClientBtn" type="submit" class="btn-primary">Save Changes</button>
           </div>
@@ -67,6 +69,32 @@
         <ul id="relatedCasesList" class="list"></ul>
       </section>
     </main>
+
+    <dialog id="remoteAccessDialog">
+      <form method="dialog" class="modal-form">
+        <h3>Remote Access Invitation</h3>
+        <p class="field-note">
+          Share this one-time setup link securely. The client will use it to create their own password.
+        </p>
+
+        <label for="remoteAccessLink">One-Time Setup Link</label>
+        <input id="remoteAccessLink" type="text" readonly />
+
+        <div class="remote-access-meta">
+          <p id="remoteAccessExpiry" class="field-note"></p>
+          <p class="field-note">The link expires after first use or when the expiry time is reached.</p>
+        </div>
+
+        <div class="portal-qr-wrap">
+          <img id="remoteAccessQr" alt="QR code for the remote access setup link" class="portal-qr-image" />
+        </div>
+
+        <div class="modal-actions portal-access-actions">
+          <button id="copyRemoteAccessBtn" type="button" class="btn-ghost">Copy Link</button>
+          <button id="closeRemoteAccessBtn" type="button" class="btn-primary">Done</button>
+        </div>
+      </form>
+    </dialog>
     <script src="api.js"></script>
     <script src="client-detail.js"></script>
   </body>

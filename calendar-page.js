@@ -13,10 +13,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 let calendarCursor = new Date();
 
 function requireSession() {
-  const sessionRaw = localStorage.getItem(SESSION_KEY);
-  if (!sessionRaw) {
-    window.location.href = "login.html";
-  }
+  return requireStaffSession();
 }
 
 function applyTheme(theme) {
@@ -149,7 +146,7 @@ toggleDarkModeBtn.addEventListener("click", () => {
 
 logoutBtn.addEventListener("click", () => {
   if (!window.confirm("Are you sure you want to log out?")) return;
-  localStorage.removeItem(SESSION_KEY);
+  clearStoredSession();
   window.location.href = "login.html";
 });
 

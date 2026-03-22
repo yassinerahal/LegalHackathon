@@ -1,9 +1,67 @@
 const API_BASE_URL = "http://localhost:3000/api";
+const STORED_SESSION_KEY = "nextact_current_user";
+
+function getStoredSession() {
+  try {
+    const raw = localStorage.getItem(STORED_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(STORED_SESSION_KEY);
+}
+
+function getSessionToken() {
+  return getStoredSession()?.token || "";
+}
+
+function getSessionHomePath(session = getStoredSession()) {
+  return session?.role === "remote_user" ? "remote-portal.html" : "index.html";
+}
+
+function requireStaffSession() {
+  const session = getStoredSession();
+  if (!session) {
+    window.location.href = "login.html";
+    return null;
+  }
+
+  if (session.role === "remote_user") {
+    window.location.href = "remote-portal.html";
+    return null;
+  }
+
+  return session;
+}
+
+function requireRemoteUserSession() {
+  const session = getStoredSession();
+  if (!session) {
+    window.location.href = "login.html";
+    return null;
+  }
+
+  if (session.role !== "remote_user") {
+    window.location.href = "index.html";
+    return null;
+  }
+
+  return session;
+}
+
+function buildAuthHeaders() {
+  const token = getSessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...buildAuthHeaders(),
       ...(options.headers || {})
     },
     ...options
@@ -81,6 +139,35 @@ async function deleteClient(id) {
   return apiRequest(`/clients/${encodeURIComponent(id)}`, {
     method: "DELETE"
   });
+}
+
+async function giveRemoteAccess(id) {
+  return apiRequest(`/clients/${encodeURIComponent(id)}/remote-access`, {
+    method: "POST"
+  });
+}
+
+async function getRemoteSetupInfo(token) {
+  return apiRequest(`/remote-access/setup?token=${encodeURIComponent(token)}`);
+}
+
+async function completeRemoteSetup(payload) {
+  return apiRequest("/remote-access/setup", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function getRemoteUserProfile() {
+  return apiRequest("/remote-user/profile");
+}
+
+async function getRemoteUserCases() {
+  return apiRequest("/remote-user/cases");
+}
+
+async function getRemoteUserTimeline() {
+  return apiRequest("/remote-user/timeline");
 }
 
 async function signup(payload) {

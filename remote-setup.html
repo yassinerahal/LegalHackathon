@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Remote Access Setup</title>
+    <link rel="stylesheet" href="auth.css" />
+  </head>
+  <body>
+    <main class="auth-page">
+      <section class="auth-card">
+        <img src="icons/logo.png" alt="NEXTACT logo" class="auth-logo" />
+        <h1>Set Up Your Remote Access</h1>
+        <p id="setupEmailText" class="muted">Validating your invitation link...</p>
+
+        <label for="remoteSetupPassword">Password</label>
+        <input id="remoteSetupPassword" type="password" placeholder="At least 8 characters" />
+
+        <label for="remoteSetupPasswordConfirm">Confirm Password</label>
+        <input id="remoteSetupPasswordConfirm" type="password" placeholder="Repeat your password" />
+
+        <p id="authMessage" class="message"></p>
+
+        <button id="completeRemoteSetupBtn" class="btn-primary" type="button">Activate Access</button>
+        <p class="switch-link">
+          Already activated?
+          <a href="login.html">Log in</a>
+        </p>
+      </section>
+    </main>
+    <script src="api.js"></script>
+    <script src="remote-setup.js"></script>
+  </body>
+</html>

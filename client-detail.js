@@ -3,6 +3,7 @@ const THEME_KEY = "nextact_theme";
 
 const clientTitle = document.getElementById("clientTitle");
 const clientInfo = document.getElementById("clientInfo");
+const remoteAccessInfo = document.getElementById("remoteAccessInfo");
 const clientSettingsForm = document.getElementById("clientSettingsForm");
 const clientFullName = document.getElementById("clientFullName");
 const clientAddress = document.getElementById("clientAddress");
@@ -13,7 +14,14 @@ const clientCity = document.getElementById("clientCity");
 const clientState = document.getElementById("clientState");
 const relatedCasesList = document.getElementById("relatedCasesList");
 const relatedCasesSection = document.getElementById("relatedCasesSection");
+const grantRemoteAccessBtn = document.getElementById("grantRemoteAccessBtn");
 const deleteClientBtn = document.getElementById("deleteClientBtn");
+const remoteAccessDialog = document.getElementById("remoteAccessDialog");
+const remoteAccessLink = document.getElementById("remoteAccessLink");
+const remoteAccessQr = document.getElementById("remoteAccessQr");
+const remoteAccessExpiry = document.getElementById("remoteAccessExpiry");
+const copyRemoteAccessBtn = document.getElementById("copyRemoteAccessBtn");
+const closeRemoteAccessBtn = document.getElementById("closeRemoteAccessBtn");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
@@ -22,7 +30,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 let currentClientId = null;
 
 function requireSession() {
-  if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
+  return requireStaffSession();
 }
 
 function applyTheme(theme) {
@@ -50,6 +58,22 @@ function getClientIdFromQuery() {
   return params.get("id");
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+
+function updateRemoteAccessAvailability(client) {
+  const hasEmail = Boolean(client.email && String(client.email).trim());
+  grantRemoteAccessBtn.disabled = !hasEmail;
+  remoteAccessInfo.textContent = hasEmail
+    ? "Remote access creates a one-time setup link for this client."
+    : "Remote access can only be granted to clients with an email address.";
+  remoteAccessInfo.className = hasEmail ? "field-note" : "field-note error";
+}
+
 function renderClientPage(client, relatedCases, relatedCasesError = "") {
   clientTitle.textContent = `${client.full_name} Settings`;
   clientFullName.value = client.full_name || "";
@@ -61,6 +85,7 @@ function renderClientPage(client, relatedCases, relatedCasesError = "") {
   clientState.value = client.state || "";
   clientInfo.textContent = "Update the client profile details here.";
   clientInfo.className = "field-note";
+  updateRemoteAccessAvailability(client);
   relatedCasesList.innerHTML = "";
 
   if (relatedCasesError) {
@@ -133,6 +158,7 @@ async function handleSaveClient(event) {
     clientTitle.textContent = `${updatedClient.full_name} Settings`;
     clientInfo.textContent = "Client details saved successfully.";
     clientInfo.className = "field-note success";
+    updateRemoteAccessAvailability(updatedClient);
   } catch (error) {
     clientInfo.textContent = error.message || "Failed to save client details.";
     clientInfo.className = "field-note error";
@@ -156,6 +182,30 @@ async function handleDeleteClient() {
   }
 }
 
+async function handleGrantRemoteAccess() {
+  if (!currentClientId) return;
+
+  if (!clientEmail.value.trim()) {
+    remoteAccessInfo.textContent = "Remote access can only be granted to clients with an email address.";
+    remoteAccessInfo.className = "field-note error";
+    return;
+  }
+
+  try {
+    const result = await giveRemoteAccess(currentClientId);
+    remoteAccessLink.value = result.setup_link;
+    remoteAccessQr.src = result.qr_code_data_url;
+    remoteAccessExpiry.textContent = `Expires: ${formatDateTime(result.expires_at)}`;
+    remoteAccessDialog.showModal();
+
+    remoteAccessInfo.textContent = "One-time remote access link generated successfully.";
+    remoteAccessInfo.className = "field-note success";
+  } catch (error) {
+    remoteAccessInfo.textContent = error.message || "Failed to grant remote access.";
+    remoteAccessInfo.className = "field-note error";
+  }
+}
+
 relatedCasesList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-case-id]");
   if (!row) return;
@@ -174,12 +224,27 @@ toggleDarkModeBtn.addEventListener("click", () => {
 
 logoutBtn.addEventListener("click", () => {
   if (!window.confirm("Are you sure you want to log out?")) return;
-  localStorage.removeItem(SESSION_KEY);
+  clearStoredSession();
   window.location.href = "login.html";
 });
 
 clientSettingsForm.addEventListener("submit", handleSaveClient);
+grantRemoteAccessBtn.addEventListener("click", handleGrantRemoteAccess);
 deleteClientBtn.addEventListener("click", handleDeleteClient);
+clientEmail.addEventListener("input", () => {
+  updateRemoteAccessAvailability({ email: clientEmail.value });
+});
+copyRemoteAccessBtn.addEventListener("click", async () => {
+  if (!remoteAccessLink.value) return;
+  await navigator.clipboard.writeText(remoteAccessLink.value);
+  copyRemoteAccessBtn.textContent = "Copied";
+  window.setTimeout(() => {
+    copyRemoteAccessBtn.textContent = "Copy Link";
+  }, 1200);
+});
+closeRemoteAccessBtn.addEventListener("click", () => {
+  remoteAccessDialog.close();
+});
 
 async function initPage() {
   const clientId = getClientIdFromQuery();

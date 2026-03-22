@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXTACT - Remote Portal</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="remote-portal.html" class="brand brand-link" aria-label="Go to remote portal home">
+        <img src="icons/logo.png" alt="NEXTACT logo" class="brand-logo-image" />
+        <div class="brand-copy">
+          <h1>NEXTACT</h1>
+          <p>Remote access portal</p>
+        </div>
+      </a>
+      <div class="topbar-actions">
+        <span id="loggedInUserName" class="header-user"></span>
+        <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+        <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Your Profile</h3>
+        </div>
+        <ul id="remoteProfileList" class="list"></ul>
+      </section>
+
+      <section class="grid-2">
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Your Cases</h3>
+          </div>
+          <ul id="remoteCasesList" class="list"></ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Upcoming Deadlines</h3>
+          </div>
+          <ul id="remoteDeadlinesList" class="list"></ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Your Timeline</h3>
+        </div>
+        <ul id="remoteTimelineList" class="list"></ul>
+      </section>
+    </main>
+
+    <script src="api.js"></script>
+    <script src="remote-portal.js"></script>
+  </body>
+</html>
