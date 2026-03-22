@@ -3,11 +3,22 @@ const THEME_KEY = "nextact_theme";
 
 const clientTitle = document.getElementById("clientTitle");
 const clientInfo = document.getElementById("clientInfo");
+const clientSettingsForm = document.getElementById("clientSettingsForm");
+const clientFullName = document.getElementById("clientFullName");
+const clientAddress = document.getElementById("clientAddress");
+const clientEmail = document.getElementById("clientEmail");
+const clientPhone = document.getElementById("clientPhone");
+const clientZipCode = document.getElementById("clientZipCode");
+const clientCity = document.getElementById("clientCity");
+const clientState = document.getElementById("clientState");
 const relatedCasesList = document.getElementById("relatedCasesList");
+const relatedCasesSection = document.getElementById("relatedCasesSection");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+
+let currentClientId = null;
 
 function requireSession() {
   if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
@@ -38,10 +49,30 @@ function getClientIdFromQuery() {
   return params.get("id");
 }
 
-function renderClientPage(client, relatedCases) {
-  clientTitle.textContent = client.full_name;
-  clientInfo.textContent = `${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}`;
+function renderClientPage(client, relatedCases, relatedCasesError = "") {
+  clientTitle.textContent = `${client.full_name} Settings`;
+  clientFullName.value = client.full_name || "";
+  clientAddress.value = client.address || "";
+  clientEmail.value = client.email || "";
+  clientPhone.value = client.phone || "";
+  clientZipCode.value = client.zip_code || "";
+  clientCity.value = client.city || "";
+  clientState.value = client.state || "";
+  clientInfo.textContent = "Update the client profile details here.";
+  clientInfo.className = "field-note";
   relatedCasesList.innerHTML = "";
+
+  if (relatedCasesError) {
+    relatedCasesList.innerHTML = `
+      <li>
+        <div>
+          <strong>Could not load related cases.</strong>
+          <p class="meta">${relatedCasesError}</p>
+        </div>
+      </li>
+    `;
+    return;
+  }
 
   if (!relatedCases.length) {
     relatedCasesList.innerHTML = `
@@ -73,6 +104,40 @@ function renderClientPage(client, relatedCases) {
   });
 }
 
+async function handleSaveClient(event) {
+  event.preventDefault();
+
+  if (!currentClientId) return;
+
+  const full_name = clientFullName.value.trim();
+  const address = clientAddress.value.trim();
+
+  if (!full_name || !address) {
+    clientInfo.textContent = "Client name and address are required.";
+    clientInfo.className = "field-note error";
+    return;
+  }
+
+  try {
+    const updatedClient = await updateClient(currentClientId, {
+      full_name,
+      address,
+      email: clientEmail.value.trim(),
+      phone: clientPhone.value.trim(),
+      zip_code: clientZipCode.value.trim(),
+      city: clientCity.value.trim(),
+      state: clientState.value.trim()
+    });
+
+    clientTitle.textContent = `${updatedClient.full_name} Settings`;
+    clientInfo.textContent = "Client details saved successfully.";
+    clientInfo.className = "field-note success";
+  } catch (error) {
+    clientInfo.textContent = error.message || "Failed to save client details.";
+    clientInfo.className = "field-note error";
+  }
+}
+
 relatedCasesList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-case-id]");
   if (!row) return;
@@ -95,6 +160,8 @@ logoutBtn.addEventListener("click", () => {
   window.location.href = "login.html";
 });
 
+clientSettingsForm.addEventListener("submit", handleSaveClient);
+
 async function initPage() {
   const clientId = getClientIdFromQuery();
   if (!clientId) {
@@ -102,13 +169,24 @@ async function initPage() {
     return;
   }
 
-  try {
-    const [client, relatedCases] = await Promise.all([
-      getClientById(clientId),
-      getClientCases(clientId)
-    ]);
+  currentClientId = clientId;
 
-    renderClientPage(client, relatedCases);
+  try {
+    const client = await getClientById(clientId);
+    let relatedCases = [];
+    let relatedCasesError = "";
+
+    try {
+      relatedCases = await getClientCases(clientId);
+    } catch (error) {
+      relatedCasesError = error.message || "Please try again.";
+    }
+
+    renderClientPage(client, relatedCases, relatedCasesError);
+
+    if (window.location.hash === "#related-cases" && relatedCasesSection) {
+      relatedCasesSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   } catch (error) {
     window.location.href = "clients.html";
   }

@@ -33,6 +33,67 @@ app.get("/api/clients", async (req, res) => {
   }
 });
 
+app.get("/api/clients/:id", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM clients WHERE id = $1", [req.params.id]);
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch client" });
+  }
+});
+
+app.put("/api/clients/:id", async (req, res) => {
+  try {
+    const { full_name, email, phone, address, zip_code, city, state } = req.body;
+
+    const result = await pool.query(
+      `UPDATE clients
+       SET full_name = $1,
+           email = $2,
+           phone = $3,
+           address = $4,
+           zip_code = $5,
+           city = $6,
+           state = $7
+       WHERE id = $8
+       RETURNING *`,
+      [full_name, email, phone, address, zip_code, city, state, req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update client" });
+  }
+});
+
+app.get("/api/clients/:id/cases", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT *
+       FROM cases
+       WHERE client_id = $1
+       ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch client cases" });
+  }
+});
+
 // Create client
 app.post("/api/clients", async (req, res) => {
   try {
@@ -94,6 +155,33 @@ app.get("/api/cases/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch case" });
+  }
+});
+
+app.put("/api/cases/:id", async (req, res) => {
+  try {
+    const { name, client_id, status, deadline, short_description } = req.body;
+
+    const result = await pool.query(
+      `UPDATE cases
+       SET name = $1,
+           client_id = $2,
+           status = $3,
+           deadline = $4,
+           short_description = $5
+       WHERE id = $6
+       RETURNING *`,
+      [name, client_id, status || "open", deadline || null, short_description || null, req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update case error:", error);
+    res.status(500).json({ error: error.message || "Failed to update case" });
   }
 });
 // Signup

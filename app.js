@@ -36,8 +36,10 @@ const upcomingDeadlines = document.getElementById("upcomingDeadlines");
 const pendingDocs = document.getElementById("pendingDocs");
 const caseList = document.getElementById("caseList");
 const deadlineList = document.getElementById("deadlineList");
+const clientList = document.getElementById("clientList");
 const calendarBtn = document.getElementById("calendarBtn");
 const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
+const viewAllClientsBtn = document.getElementById("viewAllClientsBtn");
 const newCaseMainBtn = document.getElementById("newCaseMainBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const quickUploadDropZone = document.getElementById("quickUploadDropZone");
@@ -264,10 +266,46 @@ function renderDeadlines() {
   });
 }
 
+function renderClients() {
+  if (!clientList) return;
+
+  clientList.innerHTML = "";
+
+  if (!state.clients.length) {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div>
+        <strong>No clients yet.</strong>
+        <p class="meta">Add a client from the case form to see it here.</p>
+      </div>
+    `;
+    clientList.appendChild(li);
+    return;
+  }
+
+  state.clients.slice(0, 5).forEach((client) => {
+    const clientCaseCount = state.cases.filter((entry) => Number(entry.client_id) === Number(client.id)).length;
+    const li = document.createElement("li");
+    li.dataset.clientId = client.id;
+    li.classList.add("case-row-clickable");
+    li.innerHTML = `
+      <div>
+        <strong>${client.name}</strong>
+        <p class="meta">
+          ${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}
+        </p>
+      </div>
+      <span class="badge">${clientCaseCount} case(s)</span>
+    `;
+    clientList.appendChild(li);
+  });
+}
+
 function render() {
   renderStats();
   renderCases();
   renderDeadlines();
+  renderClients();
   renderQuickUploadCaseOptions();
 }
 
@@ -606,6 +644,12 @@ if (viewAllCasesBtn) {
   });
 }
 
+if (viewAllClientsBtn) {
+  viewAllClientsBtn.addEventListener("click", () => {
+    window.location.href = "clients.html";
+  });
+}
+
 if (quickUploadDropZone) {
   quickUploadDropZone.addEventListener("click", () => quickUploadDocuments.click());
   quickUploadDropZone.addEventListener("dragover", (event) => {
@@ -651,6 +695,15 @@ caseList.addEventListener("click", (event) => {
     window.location.href = `case-detail.html?id=${encodeURIComponent(row.dataset.caseId)}`;
   }
 });
+
+if (clientList) {
+  clientList.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-client-id]");
+    if (row) {
+      window.location.href = `client-detail.html?id=${encodeURIComponent(row.dataset.clientId)}`;
+    }
+  });
+}
 
 showClientFormBtn.addEventListener("click", () => {
   clientForm.classList.toggle("hidden");

@@ -64,6 +64,13 @@ async function createClient(payload) {
   });
 }
 
+async function updateClient(id, payload) {
+  return apiRequest(`/clients/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
 async function signup(payload) {
   return apiRequest("/auth/signup", {
     method: "POST",

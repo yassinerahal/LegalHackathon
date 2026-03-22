@@ -80,8 +80,30 @@ function writeCases(cases) {
 
 function getCurrentCaseAndIndex() {
   const cases = readCases();
-  const index = cases.findIndex((entry) => entry.id === currentCaseId);
+  const index = cases.findIndex((entry) => String(entry.id) === String(currentCaseId));
   return { cases, index };
+}
+
+function mergeCaseIntoLocal(entry) {
+  const cases = readCases();
+  const index = cases.findIndex((item) => String(item.id) === String(entry.id));
+  const existing = index >= 0 ? cases[index] : {};
+  const mergedEntry = {
+    ...existing,
+    ...entry,
+    comments: existing.comments || entry.comments || [],
+    requiredDocuments: existing.requiredDocuments || entry.requiredDocuments || [],
+    uploadedDocuments: existing.uploadedDocuments || entry.uploadedDocuments || []
+  };
+
+  if (index >= 0) {
+    cases[index] = mergedEntry;
+  } else {
+    cases.unshift(mergedEntry);
+  }
+
+  writeCases(cases);
+  return mergedEntry;
 }
 
 function hideContextMenu() {
@@ -372,7 +394,7 @@ function linkUploadedToPlaceholder(fileName, placeholderIndex) {
 }
 
 function openEditModal() {
-  const entry = readCases().find((item) => item.id === currentCaseId);
+  const entry = readCases().find((item) => String(item.id) === String(currentCaseId));
   if (!entry) return;
   editCaseName.value = entry.title || "";
   editClientNames.value = (entry.clientNames || []).join(", ");
@@ -543,10 +565,10 @@ cancelEditBtn.addEventListener("click", () => {
   editCaseModal.close();
 });
 
-saveEditBtn.addEventListener("click", () => {
+saveEditBtn.addEventListener("click", async () => {
   if (!currentCaseId) return;
   const cases = readCases();
-  const caseIndex = cases.findIndex((entry) => entry.id === currentCaseId);
+  const caseIndex = cases.findIndex((entry) => String(entry.id) === String(currentCaseId));
   if (caseIndex < 0) return;
 
   const title = editCaseName.value.trim();
@@ -564,6 +586,26 @@ saveEditBtn.addEventListener("click", () => {
     return;
   }
 
+  let resolvedClientId = cases[caseIndex].client_id;
+
+  try {
+    const clientsList = await getClients();
+    const matchedClient = clientsList.find(
+      (client) => client.full_name.trim().toLowerCase() === clients[0].trim().toLowerCase()
+    );
+
+    if (!matchedClient) {
+      editClientNames.focus();
+      window.alert(`Client "${clients[0]}" was not found. Please use an existing client.`);
+      return;
+    }
+
+    resolvedClientId = matchedClient.id;
+  } catch (error) {
+    window.alert(error.message || "Failed to validate client.");
+    return;
+  }
+
   const existingComments = cases[caseIndex].comments || [];
   const comments = commentText
     ? [
@@ -572,19 +614,33 @@ saveEditBtn.addEventListener("click", () => {
       ]
     : existingComments;
 
-  cases[caseIndex] = {
-    ...cases[caseIndex],
-    title,
-    clientNames: clients,
-    status,
-    deadline,
-    stage: description || "New case",
-    comments
-  };
+  try {
+    const updatedCase = await updateCase(currentCaseId, {
+      name: title,
+      client_id: resolvedClientId,
+      status,
+      deadline: deadline || null,
+      short_description: description || ""
+    });
 
-  writeCases(cases);
-  editCaseModal.close();
-  renderCaseDetails(cases[caseIndex]);
+    cases[caseIndex] = {
+      ...cases[caseIndex],
+      id: updatedCase.id,
+      title: updatedCase.name,
+      client_id: updatedCase.client_id,
+      clientNames: clients,
+      status: updatedCase.status || status,
+      deadline: updatedCase.deadline || "",
+      stage: updatedCase.short_description || "No description",
+      comments
+    };
+
+    writeCases(cases);
+    editCaseModal.close();
+    renderCaseDetails(cases[caseIndex]);
+  } catch (error) {
+    window.alert(error.message || "Failed to save case changes.");
+  }
 });
 
 finishCaseBtn.addEventListener("click", () => {
@@ -592,9 +648,6 @@ finishCaseBtn.addEventListener("click", () => {
   saveEditBtn.click();
 });
 
-requireSession();
-applyTheme(readTheme());
-renderLoggedInUser();
 async function initPage() {
   const caseId = getCaseIdFromQuery();
   if (!caseId) {
@@ -604,9 +657,9 @@ async function initPage() {
 
   try {
     const entry = await getCaseById(caseId);
-
-    renderCaseDetails({
+    const mergedEntry = mergeCaseIntoLocal({
       id: entry.id,
+      client_id: entry.client_id,
       title: entry.name,
       stage: entry.short_description || "No description",
       clientNames: entry.client_name ? [entry.client_name] : [],
@@ -616,6 +669,8 @@ async function initPage() {
       requiredDocuments: [],
       uploadedDocuments: []
     });
+
+    renderCaseDetails(mergedEntry);
   } catch (error) {
     console.error(error);
     window.location.href = "cases.html";

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NEXTACT - Client Detail</title>
+    <title>NEXTACT - Client Settings</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
         <span class="brand-logo">⏱</span>
         <div>
           <h1>NEXTACT</h1>
-          <p>Profile and related cases</p>
+          <p>Client settings and related cases</p>
         </div>
       </a>
       <div class="topbar-actions">
@@ -26,12 +26,39 @@
     <main class="container">
       <section class="panel">
         <div class="panel-head">
-          <h3 id="clientTitle">Client Information</h3>
+          <h3 id="clientTitle">Client Settings</h3>
         </div>
-        <p id="clientInfo" class="meta"></p>
+        <form id="clientSettingsForm" class="modal-form client-settings-form">
+          <label for="clientFullName">Name</label>
+          <input id="clientFullName" type="text" />
+
+          <label for="clientAddress">Address</label>
+          <input id="clientAddress" type="text" />
+
+          <label for="clientEmail">Email</label>
+          <input id="clientEmail" type="email" />
+
+          <label for="clientPhone">Phone</label>
+          <input id="clientPhone" type="tel" />
+
+          <label for="clientZipCode">ZIP Code</label>
+          <input id="clientZipCode" type="text" />
+
+          <label for="clientCity">City</label>
+          <input id="clientCity" type="text" />
+
+          <label for="clientState">State</label>
+          <input id="clientState" type="text" />
+
+          <p id="clientInfo" class="field-note"></p>
+
+          <div class="modal-actions">
+            <button id="saveClientBtn" type="submit" class="btn-primary">Save Changes</button>
+          </div>
+        </form>
       </section>
 
-      <section class="panel">
+      <section id="relatedCasesSection" class="panel">
         <div class="panel-head">
           <h3>Related Cases</h3>
         </div>

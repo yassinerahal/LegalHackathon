@@ -64,7 +64,12 @@ async function renderClients() {
             ${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}
           </p>
         </div>
-        <span class="badge">${caseCount} case(s)</span>
+        <div class="case-actions">
+          <button type="button" class="btn-ghost btn-small" data-related-cases="${client.id}">
+            View Related Cases
+          </button>
+          <span class="badge">${caseCount} case(s)</span>
+        </div>
       `;
       clientsList.appendChild(li);
     });
@@ -81,6 +86,13 @@ async function renderClients() {
 }
 
 clientsList.addEventListener("click", (event) => {
+  const relatedCasesButton = event.target.closest("[data-related-cases]");
+  if (relatedCasesButton) {
+    event.stopPropagation();
+    window.location.href = `client-detail.html?id=${encodeURIComponent(relatedCasesButton.dataset.relatedCases)}#related-cases`;
+    return;
+  }
+
   const row = event.target.closest("[data-client-id]");
   if (!row) return;
   window.location.href = `client-detail.html?id=${encodeURIComponent(row.dataset.clientId)}`;
