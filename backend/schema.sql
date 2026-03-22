@@ -31,16 +31,16 @@ CREATE TABLE cases (
 CREATE TABLE documents (
     id SERIAL PRIMARY KEY,
     case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-    title VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE document_versions (
     id SERIAL PRIMARY KEY,
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    version_number INTEGER NOT NULL,
-    file_path VARCHAR(500) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    s3_key VARCHAR(500) UNIQUE NOT NULL,
+    mime_type VARCHAR(100),
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );

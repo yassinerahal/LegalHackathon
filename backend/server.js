@@ -104,6 +104,62 @@ app.post("/api/cases/:id/documents", async (req, res) => {
   }
 });
 
+app.post("/api/cases/:case_id/documents/confirm", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const caseId = req.params.case_id;
+    const { name, original_name, s3_key, mime_type } = req.body;
+
+    if (!/^\d+$/.test(String(caseId))) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    if (!name || !original_name || !s3_key) {
+      return res.status(400).json({ error: "name, original_name, and s3_key are required" });
+    }
+
+    if (!(await caseExists(caseId))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    await client.query("BEGIN");
+
+    const documentResult = await client.query(
+      `
+      INSERT INTO documents (case_id, name)
+      VALUES ($1, $2)
+      RETURNING id
+      `,
+      [caseId, name]
+    );
+
+    const documentId = documentResult.rows[0].id;
+
+    const versionResult = await client.query(
+      `
+      INSERT INTO document_versions (document_id, original_name, s3_key, mime_type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [documentId, original_name, s3_key, mime_type || null]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      document_id: documentId,
+      ...versionResult.rows[0]
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Confirm document error:", error);
+    res.status(500).json({ error: "Failed to confirm document upload" });
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/api/cases/:id/documents", async (req, res) => {
   try {
     const caseId = req.params.id;

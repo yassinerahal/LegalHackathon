@@ -156,6 +156,17 @@ async function initDashboard() {
   try {
     const [cases, clients] = await Promise.all([getCases(), getClients()]);
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
+    const caseDocumentsById = new Map(
+      (
+        await Promise.all(
+          cases.map(async (entry) => [
+            String(entry.id),
+            await getCaseDocuments(entry.id)
+          ])
+        )
+      ).map(([caseId, documents]) => [caseId, documents])
+    );
+
     state.cases = cases.map((entry) => ({
       id: entry.id,
       title: entry.name,
@@ -166,7 +177,13 @@ async function initDashboard() {
       deadline: entry.deadline || "",
       comments: storedCasesById.get(String(entry.id))?.comments || [],
       requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
-      uploadedDocuments: storedCasesById.get(String(entry.id))?.uploadedDocuments || []
+      uploadedDocuments: (caseDocumentsById.get(String(entry.id)) || []).map((document) => ({
+        name: document.original_name,
+        previewUrl: "",
+        mimeType: document.mime_type || "",
+        s3Key: document.s3_key,
+        uploadedAt: document.uploaded_at || ""
+      }))
     }));
     state.clients = clients.map((client) => ({
       id: client.id,

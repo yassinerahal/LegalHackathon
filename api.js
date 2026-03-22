@@ -96,6 +96,13 @@ async function linkCaseDocument(caseId, payload) {
   });
 }
 
+async function confirmCaseDocument(caseId, payload) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents/confirm`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 async function getCaseDocuments(caseId) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents`);
 }

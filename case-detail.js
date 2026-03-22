@@ -38,6 +38,7 @@ const ctxRemoveBtn = document.getElementById("ctxRemoveBtn");
 
 let currentCaseId = null;
 let contextMenuFile = null;
+const stagedPlaceholderFiles = new Map();
 
 function requireSession() {
   if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
@@ -107,6 +108,19 @@ function getCurrentCaseAndIndex() {
 function hideContextMenu() {
   fileContextMenu.classList.add("hidden");
   contextMenuFile = null;
+}
+
+function stageLocalFileForPlaceholder(placeholderId, file) {
+  if (!placeholderId || !file) return;
+  stagedPlaceholderFiles.set(String(placeholderId), file);
+}
+
+function clearStagedFileForPlaceholder(placeholderId) {
+  stagedPlaceholderFiles.delete(String(placeholderId));
+}
+
+function getStagedFileForPlaceholder(placeholderId) {
+  return stagedPlaceholderFiles.get(String(placeholderId)) || null;
 }
 
 function removeFileFromCase(fileName) {
@@ -314,8 +328,19 @@ function renderCaseDetails(entry) {
       removeBtn.dataset.removeDocIndex = String(index);
       removeBtn.textContent = "Remove";
 
+      const confirmBtn = document.createElement("button");
+      confirmBtn.type = "button";
+      confirmBtn.className = "btn-primary btn-small";
+      confirmBtn.dataset.confirmPlaceholderId = String(doc.id);
+      confirmBtn.textContent = "Confirm";
+
+      if (!getStagedFileForPlaceholder(doc.id)) {
+        confirmBtn.disabled = true;
+      }
+
       li.appendChild(label);
       li.appendChild(dropField);
+      li.appendChild(confirmBtn);
       li.appendChild(removeBtn);
       requiredDocsList.appendChild(li);
     });
@@ -407,6 +432,7 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
       linkedS3Key: updatedPlaceholder.linked_s3_key || documentMeta.s3Key,
       uploadedFileName: documentMeta.name
     };
+    clearStagedFileForPlaceholder(required[placeholderIndex].id);
     cases[index] = {
       ...cases[index],
       requiredDocuments: required
@@ -416,6 +442,56 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
   } catch (error) {
     console.error("Failed to link placeholder:", error);
     window.alert(error.message || "Failed to link placeholder.");
+  }
+}
+
+async function confirmPlaceholderUpload(placeholderId) {
+  const stagedFile = getStagedFileForPlaceholder(placeholderId);
+  if (!stagedFile) return;
+
+  const { cases, index } = getCurrentCaseAndIndex();
+  if (index < 0) return;
+
+  const placeholderIndex = (cases[index].requiredDocuments || []).findIndex(
+    (placeholder) => String(placeholder.id) === String(placeholderId)
+  );
+  if (placeholderIndex < 0) return;
+
+  try {
+    const uploadData = await uploadFile(stagedFile);
+    const placeholder = cases[index].requiredDocuments[placeholderIndex];
+    const confirmedDocument = await confirmCaseDocument(currentCaseId, {
+      name: placeholder.name,
+      original_name: stagedFile.name,
+      s3_key: uploadData.filePath,
+      mime_type: stagedFile.type || "application/octet-stream"
+    });
+
+    const currentDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
+    currentDocs.push({
+      name: confirmedDocument.original_name,
+      previewUrl: "",
+      mimeType: confirmedDocument.mime_type || stagedFile.type || "",
+      s3Key: confirmedDocument.s3_key,
+      uploadedAt: confirmedDocument.uploaded_at || ""
+    });
+
+    cases[index] = {
+      ...cases[index],
+      uploadedDocuments: currentDocs
+    };
+    writeCases(cases);
+
+    await linkUploadedToPlaceholder(
+      {
+        name: confirmedDocument.original_name,
+        s3Key: confirmedDocument.s3_key
+      },
+      placeholderIndex
+    );
+  } catch (error) {
+    console.error("Failed to confirm placeholder upload:", error);
+    window.alert(error.message || "Failed to save file for this placeholder.");
   }
 }
 
@@ -567,6 +643,30 @@ requiredDocsList.addEventListener("drop", (event) => {
   const placeholderIndex = Number(dropField.dataset.docDropIndex);
   if (Number.isNaN(placeholderIndex)) return;
 
+  const { cases, index } = getCurrentCaseAndIndex();
+  if (index < 0) return;
+  const placeholder = (cases[index].requiredDocuments || [])[placeholderIndex];
+  if (!placeholder) return;
+
+  const droppedFiles = Array.from(event.dataTransfer.files || []);
+  if (droppedFiles.length) {
+    const stagedFile = droppedFiles[0];
+    stageLocalFileForPlaceholder(placeholder.id, stagedFile);
+    const requiredDocuments = [...(cases[index].requiredDocuments || [])];
+    requiredDocuments[placeholderIndex] = {
+      ...requiredDocuments[placeholderIndex],
+      status: "Pending",
+      uploadedFileName: stagedFile.name
+    };
+    cases[index] = {
+      ...cases[index],
+      requiredDocuments
+    };
+    writeCases(cases);
+    renderCaseDetails(cases[index]);
+    return;
+  }
+
   let documentMeta = null;
   try {
     const payload = event.dataTransfer.getData("application/json");
@@ -583,6 +683,12 @@ requiredDocsList.addEventListener("drop", (event) => {
 
   if (!documentMeta?.s3Key) return;
   linkUploadedToPlaceholder(documentMeta, placeholderIndex);
+});
+
+requiredDocsList.addEventListener("click", (event) => {
+  const confirmBtn = event.target.closest("[data-confirm-placeholder-id]");
+  if (!confirmBtn) return;
+  confirmPlaceholderUpload(confirmBtn.dataset.confirmPlaceholderId);
 });
 
 requiredDocsList.addEventListener("click", (event) => {
