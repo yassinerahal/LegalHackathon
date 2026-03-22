@@ -204,7 +204,28 @@ function parseClientNames(value) {
 
 function formatDate(dateValue) {
   if (!dateValue) return "TBD";
-  const date = new Date(`${dateValue}T00:00:00`);
+
+  let date = null;
+
+  if (typeof dateValue === "string") {
+    const normalized = dateValue.trim();
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      date = new Date(`${normalized}T00:00:00`);
+    } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(normalized)) {
+      const [day, month, year] = normalized.split(".");
+      date = new Date(`${year}-${month}-${day}T00:00:00`);
+    } else {
+      date = new Date(normalized);
+    }
+  } else {
+    date = new Date(dateValue);
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return String(dateValue);
+  }
+
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
