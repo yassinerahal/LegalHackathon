@@ -55,6 +55,7 @@ const modalTitle = document.getElementById("modalTitle");
 const closeModalBtn = document.getElementById("closeModalBtn");
 const newItemBtn = document.getElementById("newItemBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const billingBtn = document.getElementById("billingBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
 
@@ -110,6 +111,12 @@ function applyTheme(theme) {
 
 function readTheme() {
   return localStorage.getItem(THEME_KEY) || "light";
+}
+
+if (billingBtn) {
+  billingBtn.addEventListener("click", () => {
+    window.location.href = "billing.html";
+  });
 }
 
 function renderLoggedInUser() {
