@@ -96,13 +96,6 @@ async function linkCaseDocument(caseId, payload) {
   });
 }
 
-async function confirmCaseDocument(caseId, payload) {
-  return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents/confirm`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
 async function getCaseDocuments(caseId) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents`);
 }
@@ -118,9 +111,9 @@ async function getCasePlaceholders(caseId) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders`);
 }
 
-async function linkPlaceholderToDocument(caseId, placeholderId, s3Key) {
+async function linkPlaceholderToDocument(caseId, placeholderId, payload) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders/${encodeURIComponent(placeholderId)}/link`, {
     method: "PUT",
-    body: JSON.stringify({ s3_key: s3Key })
+    body: JSON.stringify(payload)
   });
 }

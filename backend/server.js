@@ -104,62 +104,6 @@ app.post("/api/cases/:id/documents", async (req, res) => {
   }
 });
 
-app.post("/api/cases/:case_id/documents/confirm", async (req, res) => {
-  const client = await pool.connect();
-
-  try {
-    const caseId = req.params.case_id;
-    const { name, original_name, s3_key, mime_type } = req.body;
-
-    if (!/^\d+$/.test(String(caseId))) {
-      return res.status(400).json({ error: "Invalid case id" });
-    }
-
-    if (!name || !original_name || !s3_key) {
-      return res.status(400).json({ error: "name, original_name, and s3_key are required" });
-    }
-
-    if (!(await caseExists(caseId))) {
-      return res.status(404).json({ error: "Case not found" });
-    }
-
-    await client.query("BEGIN");
-
-    const documentResult = await client.query(
-      `
-      INSERT INTO documents (case_id, name)
-      VALUES ($1, $2)
-      RETURNING id
-      `,
-      [caseId, name]
-    );
-
-    const documentId = documentResult.rows[0].id;
-
-    const versionResult = await client.query(
-      `
-      INSERT INTO document_versions (document_id, original_name, s3_key, mime_type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-      `,
-      [documentId, original_name, s3_key, mime_type || null]
-    );
-
-    await client.query("COMMIT");
-
-    res.status(201).json({
-      document_id: documentId,
-      ...versionResult.rows[0]
-    });
-  } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Confirm document error:", error);
-    res.status(500).json({ error: "Failed to confirm document upload" });
-  } finally {
-    client.release();
-  }
-});
-
 app.get("/api/cases/:id/documents", async (req, res) => {
   try {
     const caseId = req.params.id;
@@ -216,7 +160,7 @@ app.post("/api/cases/:id/placeholders", async (req, res) => {
         caseId,
         String(placeholder.name || "").trim(),
         String(placeholder.status || "Pending"),
-        placeholder.linked_s3_key || null
+        JSON.stringify(Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [])
       );
       values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
     });
@@ -227,7 +171,7 @@ app.post("/api/cases/:id/placeholders", async (req, res) => {
 
     const result = await pool.query(
       `
-      INSERT INTO case_placeholders (case_id, name, status, linked_s3_key)
+      INSERT INTO case_placeholders (case_id, name, status, attached_files)
       VALUES ${values.join(", ")}
       RETURNING *
       `,
@@ -255,7 +199,7 @@ app.get("/api/cases/:id/placeholders", async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT id, case_id, name, status, linked_s3_key, created_at
+      SELECT id, case_id, name, status, attached_files, created_at
       FROM case_placeholders
       WHERE case_id = $1
       ORDER BY created_at ASC, id ASC
@@ -274,14 +218,14 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", async (req, res) => {
   try {
     const caseId = req.params.id;
     const placeholderId = req.params.placeholderId;
-    const { s3_key } = req.body;
+    const { original_name, s3_key, mime_type } = req.body;
 
     if (!/^\d+$/.test(String(caseId)) || !/^\d+$/.test(String(placeholderId))) {
       return res.status(400).json({ error: "Invalid case or placeholder id" });
     }
 
-    if (!s3_key) {
-      return res.status(400).json({ error: "s3_key is required" });
+    if (!original_name || !s3_key) {
+      return res.status(400).json({ error: "original_name and s3_key are required" });
     }
 
     if (!(await caseExists(caseId))) {
@@ -301,15 +245,23 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", async (req, res) => {
       return res.status(404).json({ error: "Document not found for this case" });
     }
 
+    const attachedFile = JSON.stringify([
+      {
+        original_name,
+        s3_key,
+        mime_type: mime_type || null
+      }
+    ]);
+
     const result = await pool.query(
       `
       UPDATE case_placeholders
       SET status = 'Uploaded',
-          linked_s3_key = $1
+          attached_files = COALESCE(attached_files, '[]'::jsonb) || $1::jsonb
       WHERE id = $2 AND case_id = $3
       RETURNING *
       `,
-      [s3_key, placeholderId, caseId]
+      [attachedFile, placeholderId, caseId]
     );
 
     res.json(result.rows[0]);

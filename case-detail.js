@@ -38,7 +38,6 @@ const ctxRemoveBtn = document.getElementById("ctxRemoveBtn");
 
 let currentCaseId = null;
 let contextMenuFile = null;
-const stagedPlaceholderFiles = new Map();
 
 function requireSession() {
   if (!localStorage.getItem(SESSION_KEY)) window.location.href = "login.html";
@@ -85,8 +84,7 @@ function writeCases(cases) {
           id: document.id,
           name: document.name,
           status: document.status || "Pending",
-          linkedS3Key: document.linkedS3Key || "",
-          uploadedFileName: document.uploadedFileName || ""
+          attachedFiles: Array.isArray(document.attachedFiles) ? document.attachedFiles : []
         })),
         uploadedDocuments: (entry.uploadedDocuments || []).map((document) => ({
           name: document.name,
@@ -110,19 +108,6 @@ function hideContextMenu() {
   contextMenuFile = null;
 }
 
-function stageLocalFileForPlaceholder(placeholderId, file) {
-  if (!placeholderId || !file) return;
-  stagedPlaceholderFiles.set(String(placeholderId), file);
-}
-
-function clearStagedFileForPlaceholder(placeholderId) {
-  stagedPlaceholderFiles.delete(String(placeholderId));
-}
-
-function getStagedFileForPlaceholder(placeholderId) {
-  return stagedPlaceholderFiles.get(String(placeholderId)) || null;
-}
-
 function removeFileFromCase(fileName) {
   const { cases, index } = getCurrentCaseAndIndex();
   if (index < 0) return;
@@ -130,8 +115,12 @@ function removeFileFromCase(fileName) {
     (file) => file.name !== fileName
   );
   const requiredDocuments = (cases[index].requiredDocuments || []).map((doc) => {
-    if (doc.uploadedFileName !== fileName) return doc;
-    return { ...doc, status: "Pending", uploadedFileName: "" };
+    const attachedFiles = (doc.attachedFiles || []).filter((entry) => entry.original_name !== fileName);
+    return {
+      ...doc,
+      status: attachedFiles.length ? "Uploaded" : "Pending",
+      attachedFiles
+    };
   });
   cases[index] = {
     ...cases[index],
@@ -298,29 +287,26 @@ function renderCaseDetails(entry) {
       const dropField = document.createElement("div");
       dropField.className = "doc-drop-field";
       dropField.dataset.docDropIndex = String(index);
-      const linkedFile = doc.linkedS3Key
-        ? uploadedDocs.find((file) => file.s3Key === doc.linkedS3Key)
-        : uploadedDocs.find((file) => file.name === doc.uploadedFileName);
+      if (Array.isArray(doc.attachedFiles) && doc.attachedFiles.length) {
+        const attachedList = document.createElement("div");
+        attachedList.className = "doc-drop-file-list";
 
-      if (linkedFile) {
-        if (linkedFile && isImageFile(linkedFile) && linkedFile.previewUrl) {
-          const image = document.createElement("img");
-          image.className = "doc-drop-thumb-image";
-          image.src = linkedFile.previewUrl;
-          image.alt = linkedFile.name;
-          dropField.appendChild(image);
-        } else {
-          const typeLabel = document.createElement("span");
-          typeLabel.className = "doc-drop-thumb-label";
-          typeLabel.textContent = getFileExtension(doc.uploadedFileName);
-          dropField.appendChild(typeLabel);
-        }
-        const linkedText = document.createElement("span");
-        linkedText.textContent = `Linked: ${linkedFile.name}`;
-        dropField.appendChild(linkedText);
-      } else {
-        dropField.textContent = "Drop an uploaded file here";
+        doc.attachedFiles.forEach((attachedFile) => {
+          const fileChip = document.createElement("span");
+          fileChip.className = "doc-drop-thumb-label";
+          fileChip.textContent = attachedFile.original_name;
+          attachedList.appendChild(fileChip);
+        });
+
+        dropField.appendChild(attachedList);
       }
+
+      const dropHint = document.createElement("p");
+      dropHint.className = "doc-drop-hint";
+      dropHint.textContent = doc.attachedFiles?.length
+        ? "Drop more files here to attach them to this placeholder"
+        : "Drop uploaded files or local files here";
+      dropField.appendChild(dropHint);
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
@@ -328,19 +314,8 @@ function renderCaseDetails(entry) {
       removeBtn.dataset.removeDocIndex = String(index);
       removeBtn.textContent = "Remove";
 
-      const confirmBtn = document.createElement("button");
-      confirmBtn.type = "button";
-      confirmBtn.className = "btn-primary btn-small";
-      confirmBtn.dataset.confirmPlaceholderId = String(doc.id);
-      confirmBtn.textContent = "Confirm";
-
-      if (!getStagedFileForPlaceholder(doc.id)) {
-        confirmBtn.disabled = true;
-      }
-
       li.appendChild(label);
       li.appendChild(dropField);
-      li.appendChild(confirmBtn);
       li.appendChild(removeBtn);
       requiredDocsList.appendChild(li);
     });
@@ -390,8 +365,7 @@ async function addRequiredPlaceholder() {
         id: placeholder.id,
         name: placeholder.name,
         status: placeholder.status || "Pending",
-        linkedS3Key: placeholder.linked_s3_key || "",
-        uploadedFileName: ""
+        attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
       });
     });
 
@@ -422,17 +396,19 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
     const updatedPlaceholder = await linkPlaceholderToDocument(
       currentCaseId,
       required[placeholderIndex].id,
-      documentMeta.s3Key
+      {
+        original_name: documentMeta.name,
+        s3_key: documentMeta.s3Key,
+        mime_type: documentMeta.mimeType || ""
+      }
     );
 
     required[placeholderIndex] = {
       ...required[placeholderIndex],
       id: updatedPlaceholder.id,
       status: updatedPlaceholder.status || "Uploaded",
-      linkedS3Key: updatedPlaceholder.linked_s3_key || documentMeta.s3Key,
-      uploadedFileName: documentMeta.name
+      attachedFiles: Array.isArray(updatedPlaceholder.attached_files) ? updatedPlaceholder.attached_files : []
     };
-    clearStagedFileForPlaceholder(required[placeholderIndex].id);
     cases[index] = {
       ...cases[index],
       requiredDocuments: required
@@ -442,56 +418,6 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
   } catch (error) {
     console.error("Failed to link placeholder:", error);
     window.alert(error.message || "Failed to link placeholder.");
-  }
-}
-
-async function confirmPlaceholderUpload(placeholderId) {
-  const stagedFile = getStagedFileForPlaceholder(placeholderId);
-  if (!stagedFile) return;
-
-  const { cases, index } = getCurrentCaseAndIndex();
-  if (index < 0) return;
-
-  const placeholderIndex = (cases[index].requiredDocuments || []).findIndex(
-    (placeholder) => String(placeholder.id) === String(placeholderId)
-  );
-  if (placeholderIndex < 0) return;
-
-  try {
-    const uploadData = await uploadFile(stagedFile);
-    const placeholder = cases[index].requiredDocuments[placeholderIndex];
-    const confirmedDocument = await confirmCaseDocument(currentCaseId, {
-      name: placeholder.name,
-      original_name: stagedFile.name,
-      s3_key: uploadData.filePath,
-      mime_type: stagedFile.type || "application/octet-stream"
-    });
-
-    const currentDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
-    currentDocs.push({
-      name: confirmedDocument.original_name,
-      previewUrl: "",
-      mimeType: confirmedDocument.mime_type || stagedFile.type || "",
-      s3Key: confirmedDocument.s3_key,
-      uploadedAt: confirmedDocument.uploaded_at || ""
-    });
-
-    cases[index] = {
-      ...cases[index],
-      uploadedDocuments: currentDocs
-    };
-    writeCases(cases);
-
-    await linkUploadedToPlaceholder(
-      {
-        name: confirmedDocument.original_name,
-        s3Key: confirmedDocument.s3_key
-      },
-      placeholderIndex
-    );
-  } catch (error) {
-    console.error("Failed to confirm placeholder upload:", error);
-    window.alert(error.message || "Failed to save file for this placeholder.");
   }
 }
 
@@ -650,20 +576,51 @@ requiredDocsList.addEventListener("drop", (event) => {
 
   const droppedFiles = Array.from(event.dataTransfer.files || []);
   if (droppedFiles.length) {
-    const stagedFile = droppedFiles[0];
-    stageLocalFileForPlaceholder(placeholder.id, stagedFile);
-    const requiredDocuments = [...(cases[index].requiredDocuments || [])];
-    requiredDocuments[placeholderIndex] = {
-      ...requiredDocuments[placeholderIndex],
-      status: "Pending",
-      uploadedFileName: stagedFile.name
-    };
-    cases[index] = {
-      ...cases[index],
-      requiredDocuments
-    };
-    writeCases(cases);
-    renderCaseDetails(cases[index]);
+    (async () => {
+      try {
+        const currentDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
+
+        for (const droppedFile of droppedFiles) {
+          const uploadData = await uploadFile(droppedFile);
+          const linkedDocument = await linkCaseDocument(currentCaseId, {
+            original_name: droppedFile.name,
+            s3_key: uploadData.filePath,
+            mime_type: droppedFile.type || "application/octet-stream"
+          });
+
+          currentDocs.push({
+            name: linkedDocument.original_name,
+            previewUrl: "",
+            mimeType: linkedDocument.mime_type || droppedFile.type || "",
+            s3Key: linkedDocument.s3_key,
+            uploadedAt: linkedDocument.uploaded_at || ""
+          });
+
+          await linkUploadedToPlaceholder(
+            {
+              name: linkedDocument.original_name,
+              s3Key: linkedDocument.s3_key,
+              mimeType: linkedDocument.mime_type || droppedFile.type || ""
+            },
+            placeholderIndex
+          );
+        }
+
+        const refreshedCases = readCases();
+        const refreshedIndex = refreshedCases.findIndex((entry) => entry.id === currentCaseId);
+        if (refreshedIndex >= 0) {
+          refreshedCases[refreshedIndex] = {
+            ...refreshedCases[refreshedIndex],
+            uploadedDocuments: currentDocs
+          };
+          writeCases(refreshedCases);
+          renderCaseDetails(refreshedCases[refreshedIndex]);
+        }
+      } catch (error) {
+        console.error("Failed to auto-upload files for placeholder:", error);
+        window.alert(error.message || "Failed to upload files for this placeholder.");
+      }
+    })();
     return;
   }
 
@@ -683,12 +640,6 @@ requiredDocsList.addEventListener("drop", (event) => {
 
   if (!documentMeta?.s3Key) return;
   linkUploadedToPlaceholder(documentMeta, placeholderIndex);
-});
-
-requiredDocsList.addEventListener("click", (event) => {
-  const confirmBtn = event.target.closest("[data-confirm-placeholder-id]");
-  if (!confirmBtn) return;
-  confirmPlaceholderUpload(confirmBtn.dataset.confirmPlaceholderId);
 });
 
 requiredDocsList.addEventListener("click", (event) => {
@@ -790,13 +741,11 @@ async function initPage() {
       deadline: entry.deadline || "",
       comments: storedCase?.comments || [],
       requiredDocuments: placeholders.map((placeholder) => {
-        const linkedDocument = documents.find((document) => document.s3_key === placeholder.linked_s3_key);
         return {
           id: placeholder.id,
           name: placeholder.name,
           status: placeholder.status || "Pending",
-          linkedS3Key: placeholder.linked_s3_key || "",
-          uploadedFileName: linkedDocument?.original_name || ""
+          attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
         };
       }),
       uploadedDocuments: documents.map((document) => ({

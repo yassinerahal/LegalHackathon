@@ -135,8 +135,7 @@ function sanitizeCaseForStorage(entry) {
       id: document.id,
       name: document.name,
       status: document.status || "Pending",
-      linkedS3Key: document.linkedS3Key || "",
-      uploadedFileName: document.uploadedFileName || ""
+      attachedFiles: Array.isArray(document.attachedFiles) ? document.attachedFiles : []
     })),
     uploadedDocuments: (entry.uploadedDocuments || [])
       .map(sanitizeDocumentForStorage)
@@ -451,26 +450,21 @@ function renderDocPlaceholderList() {
     dropField.className = "doc-drop-field";
     dropField.dataset.docDropId = entry.id;
 
-    const linkedFile = entry.linkedS3Key
-      ? currentUploadedDocuments.find((file) => file.s3Key === entry.linkedS3Key)
-      : currentUploadedDocuments.find((file) => file.name === entry.uploadedFileName);
+    const attachedFiles = Array.isArray(entry.attachedFiles) ? entry.attachedFiles : [];
 
-    if (linkedFile) {
-      if (linkedFile && isImageFile(linkedFile) && linkedFile.previewUrl) {
-        const image = document.createElement("img");
-        image.className = "doc-drop-thumb-image";
-        image.src = linkedFile.previewUrl;
-        image.alt = linkedFile.name;
-        dropField.appendChild(image);
-      } else {
-        const typeLabel = document.createElement("span");
-        typeLabel.className = "doc-drop-thumb-label";
-        typeLabel.textContent = getFileExtension(entry.uploadedFileName);
-        dropField.appendChild(typeLabel);
-      }
-      const text = document.createElement("span");
-      text.textContent = `Linked: ${linkedFile.name}`;
-      dropField.appendChild(text);
+    if (attachedFiles.length) {
+      const attachedList = document.createElement("div");
+      attachedList.className = "doc-drop-file-list";
+
+      attachedFiles.forEach((attachedFile) => {
+        const linkedFile = currentUploadedDocuments.find((file) => file.name === attachedFile.original_name);
+        const fileChip = document.createElement("span");
+        fileChip.className = "doc-drop-thumb-label";
+        fileChip.textContent = linkedFile?.name || attachedFile.original_name;
+        attachedList.appendChild(fileChip);
+      });
+
+      dropField.appendChild(attachedList);
     } else {
       dropField.textContent = "Drop an uploaded file here";
     }
@@ -730,7 +724,8 @@ addDocPlaceholderBtn.addEventListener("click", () => {
   currentDocPlaceholders.push({
     id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name,
-    status
+    status,
+    attachedFiles: []
   });
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
@@ -772,14 +767,22 @@ docPlaceholderList.addEventListener("drop", (event) => {
   dropField.classList.remove("drag-active");
   const fileName = event.dataTransfer.getData("text/plain");
   if (!fileName) return;
-  if (!currentUploadedDocuments.some((file) => file.name === fileName)) return;
+  const linkedFile = currentUploadedDocuments.find((file) => file.name === fileName);
+  if (!linkedFile) return;
 
   const placeholderId = dropField.dataset.docDropId;
   const placeholder = currentDocPlaceholders.find((item) => item.id === placeholderId);
   if (!placeholder) return;
 
-  placeholder.status = "Uploaded";
-  placeholder.uploadedFileName = fileName;
+  placeholder.attachedFiles = placeholder.attachedFiles || [];
+  if (!placeholder.attachedFiles.some((entry) => entry.original_name === linkedFile.name)) {
+    placeholder.attachedFiles.push({
+      original_name: linkedFile.name,
+      s3_key: linkedFile.s3Key || "",
+      mime_type: linkedFile.mimeType || ""
+    });
+  }
+  placeholder.status = placeholder.attachedFiles.length ? "Uploaded" : "Pending";
   renderDocPlaceholderList();
 });
 
@@ -1011,12 +1014,20 @@ saveBtn.addEventListener("click", async () => {
         currentDocPlaceholders.map((placeholder) => ({
           name: placeholder.name,
           status:
-            placeholder.uploadedFileName && uploadedDocumentMap.get(placeholder.uploadedFileName)
+            (placeholder.attachedFiles || []).some((file) => uploadedDocumentMap.get(file.original_name))
               ? "Uploaded"
               : placeholder.status || "Pending",
-          linked_s3_key: placeholder.uploadedFileName
-            ? uploadedDocumentMap.get(placeholder.uploadedFileName) || null
-            : null
+          attached_files: (placeholder.attachedFiles || [])
+            .map((file) => {
+              const s3Key = uploadedDocumentMap.get(file.original_name);
+              if (!s3Key) return null;
+              return {
+                original_name: file.original_name,
+                s3_key: s3Key,
+                mime_type: file.mime_type || ""
+              };
+            })
+            .filter(Boolean)
         }))
       );
 
@@ -1028,8 +1039,7 @@ saveBtn.addEventListener("click", async () => {
             id: placeholder.id,
             name: placeholder.name,
             status: placeholder.status || "Pending",
-            linkedS3Key: placeholder.linked_s3_key || "",
-            uploadedFileName: currentDocPlaceholders[index]?.uploadedFileName || ""
+            attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
           }))
         };
       }

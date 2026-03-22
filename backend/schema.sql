@@ -81,6 +81,6 @@ CREATE TABLE case_placeholders (
     case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'Pending',
-    linked_s3_key VARCHAR(500),
+    attached_files JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
