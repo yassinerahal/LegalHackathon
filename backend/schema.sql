@@ -20,7 +20,6 @@ CREATE TABLE clients (
 
 CREATE TABLE cases (
     id SERIAL PRIMARY KEY,
-    aktenzahl VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     status VARCHAR(50) NOT NULL DEFAULT 'open',
