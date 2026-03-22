@@ -1,33 +1,11 @@
-const INITIAL_CASES = [
-  { title: "Al-Hassan vs Vertex Ltd", stage: "Discovery", clientName: "Maya Al-Hassan" },
-  { title: "Estate Planning - M. Karim", stage: "Drafting", clientName: "Mina Karim" },
-  { title: "Labor Dispute - Noor Group", stage: "Hearing Prep", clientName: "Noor Group" }
-];
-
-const DEFAULT_DEADLINES = [
-  { title: "File motion for Vertex case", date: "2026-03-23" },
-  { title: "Client review meeting", date: "2026-03-25" },
-  { title: "Submit compliance checklist", date: "2026-03-27" }
-];
+const INITIAL_CASES = [];
+const DEFAULT_DEADLINES = [];
 
 const state = {
-  cases: INITIAL_CASES.map((entry, index) => ({
-    id: `case-${Date.now()}-${index}`,
-    title: entry.title,
-    stage: entry.stage,
-    clientNames: [entry.clientName],
-    status: "Active",
-    comments: [],
-    requiredDocuments: [],
-    uploadedDocuments: []
-  })),
+  cases: [],
   deadlines: [],
-  clients: [
-    { name: "Maya Al-Hassan", address: "City Center 10", email: "", phone: "" },
-    { name: "Mina Karim", address: "Palm Street 8", email: "", phone: "" },
-    { name: "Noor Group", address: "Business Bay 21", email: "", phone: "" }
-  ],
-  documents: 7
+  clients: [],
+  documents: 0
 };
 
 const activeCases = document.getElementById("activeCases");
@@ -60,19 +38,16 @@ const logoutBtn = document.getElementById("logoutBtn");
 const billingBtn = document.getElementById("billingBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
-
 const caseName = document.getElementById("caseName");
 const clientNames = document.getElementById("clientNames");
 const clientStatus = document.getElementById("clientStatus");
 const showClientFormBtn = document.getElementById("showClientFormBtn");
 const clientForm = document.getElementById("clientForm");
-
 const clientFullName = document.getElementById("clientFullName");
 const clientAddress = document.getElementById("clientAddress");
 const clientEmail = document.getElementById("clientEmail");
 const clientPhone = document.getElementById("clientPhone");
 const saveClientBtn = document.getElementById("saveClientBtn");
-
 const caseStatus = document.getElementById("caseStatus");
 const caseDeadline = document.getElementById("caseDeadline");
 const caseDescription = document.getElementById("caseDescription");
@@ -95,12 +70,12 @@ let editingCaseId = null;
 let currentDocPlaceholders = [];
 let pendingQuickUploadFiles = [];
 const SESSION_KEY = "nextact_current_user";
+const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
 function requireSession() {
   return requireStaffSession();
 }
-
 
 function applyTheme(theme) {
   document.body.classList.toggle("dark-mode", theme === "dark");
@@ -129,6 +104,48 @@ function renderLoggedInUser() {
   }
 }
 
+function readStoredCases() {
+  const raw = localStorage.getItem(CASES_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function sanitizeDocumentForStorage(document) {
+  if (!document || !document.name) return null;
+
+  return {
+    name: document.name,
+    mimeType: document.mimeType || "",
+    s3Key: document.s3Key || "",
+    uploadedAt: document.uploadedAt || ""
+  };
+}
+
+function sanitizeCaseForStorage(entry) {
+  return {
+    ...entry,
+    requiredDocuments: (entry.requiredDocuments || []).map((document) => ({
+      id: document.id,
+      name: document.name,
+      status: document.status || "Pending",
+      attachedFiles: Array.isArray(document.attachedFiles) ? document.attachedFiles : []
+    })),
+    uploadedDocuments: (entry.uploadedDocuments || [])
+      .map(sanitizeDocumentForStorage)
+      .filter(Boolean)
+  };
+}
+
+function writeStoredCases(cases) {
+  localStorage.setItem(CASES_KEY, JSON.stringify(cases.map(sanitizeCaseForStorage)));
+}
+
 async function initDashboard() {
   requireSession();
   applyTheme(readTheme());
@@ -136,6 +153,17 @@ async function initDashboard() {
 
   try {
     const [cases, clients] = await Promise.all([getCases(), getClients()]);
+    const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
+    const caseDocumentsById = new Map(
+      (
+        await Promise.all(
+          cases.map(async (entry) => [
+            String(entry.id),
+            await getCaseDocuments(entry.id)
+          ])
+        )
+      ).map(([caseId, documents]) => [caseId, documents])
+    );
 
     state.cases = cases.map((entry) => ({
       id: entry.id,
@@ -145,11 +173,16 @@ async function initDashboard() {
       clientNames: entry.client_name ? [entry.client_name] : [],
       status: entry.status || "open",
       deadline: entry.deadline || "",
-      comments: [],
-      requiredDocuments: [],
-      uploadedDocuments: []
+      comments: storedCasesById.get(String(entry.id))?.comments || [],
+      requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
+      uploadedDocuments: (caseDocumentsById.get(String(entry.id)) || []).map((document) => ({
+        name: document.original_name,
+        previewUrl: "",
+        mimeType: document.mime_type || "",
+        s3Key: document.s3_key,
+        uploadedAt: document.uploaded_at || ""
+      }))
     }));
-
     state.clients = clients.map((client) => ({
       id: client.id,
       name: client.full_name,
@@ -157,14 +190,13 @@ async function initDashboard() {
       email: client.email || "",
       phone: client.phone || ""
     }));
-
     state.deadlines = state.cases
       .filter((entry) => entry.deadline)
       .map((entry) => ({
         title: `${entry.title} deadline`,
         date: entry.deadline
       }));
-
+    writeStoredCases(state.cases);
     render();
   } catch (error) {
     console.error(error);
@@ -246,10 +278,7 @@ function renderCases() {
     const uploadedCount = (entry.uploadedDocuments || []).length;
     const commentMarkup = newestComments.length
       ? `<div class="case-comments">${newestComments
-          .map(
-            (comment) =>
-              `<p class="case-comment">${comment.createdAtLabel}: ${comment.text}</p>`
-          )
+          .map((comment) => `<p class="case-comment">${comment.createdAtLabel}: ${comment.text}</p>`)
           .join("")}</div>`
       : '<div class="case-comments"><p class="case-comment">No comments yet.</p></div>';
     const badgeClass = entry.status === "Finished" ? "badge success" : "badge";
@@ -346,7 +375,10 @@ function openAssignUploadModal(files) {
   assignUploadModal.showModal();
 }
 
-function uploadPendingFilesToCase() {
+// ==============================================================================
+// UPDATED: Quick Upload now uses Real S3 + PostgreSQL Backend
+// ==============================================================================
+async function uploadPendingFilesToCase() {
   const selectedCaseId = assignUploadCaseSelect.value;
   if (!selectedCaseId) {
     quickUploadStatus.textContent = "Select a case first.";
@@ -359,7 +391,10 @@ function uploadPendingFilesToCase() {
     return;
   }
 
-  const caseIndex = state.cases.findIndex((entry) => entry.id === selectedCaseId);
+  quickUploadStatus.textContent = "Uploading to secure vault...";
+  quickUploadStatus.className = "field-note";
+
+  const caseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(selectedCaseId));
   if (caseIndex < 0) {
     quickUploadStatus.textContent = "Case not found.";
     quickUploadStatus.className = "field-note error";
@@ -368,28 +403,52 @@ function uploadPendingFilesToCase() {
 
   const existingDocs = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
   const existingNames = new Set(existingDocs.map((file) => file.name));
-  pendingQuickUploadFiles.forEach((file) => {
+  let successCount = 0;
+  const failedUploads = [];
+
+  for (const file of pendingQuickUploadFiles) {
     if (!existingNames.has(file.name)) {
-      existingDocs.push({
-        name: file.name,
-        previewUrl: URL.createObjectURL(file),
-        mimeType: file.type || ""
-      });
-      existingNames.add(file.name);
+      try {
+        const uploadData = await uploadFile(file);
+        const linkedDocument = await linkCaseDocument(selectedCaseId, {
+          original_name: file.name,
+          s3_key: uploadData.filePath,
+          mime_type: file.type || "application/octet-stream"
+        });
+
+        existingDocs.push({
+          name: linkedDocument.original_name,
+          previewUrl: "",
+          mimeType: linkedDocument.mime_type || file.type || "",
+          s3Key: linkedDocument.s3_key,
+          uploadedAt: linkedDocument.uploaded_at || ""
+        });
+        existingNames.add(file.name);
+        successCount++;
+      } catch (error) {
+        console.error(`Upload error for ${file.name}:`, error);
+        failedUploads.push(file.name);
+      }
     }
-  });
+  }
 
   state.cases[caseIndex] = {
     ...state.cases[caseIndex],
     uploadedDocuments: existingDocs
   };
-  state.documents += pendingQuickUploadFiles.length;
+  state.documents += successCount;
+  writeStoredCases(state.cases);
   render();
+
   quickUploadDocuments.value = "";
-  quickUploadStatus.textContent = `${pendingQuickUploadFiles.length} file(s) uploaded successfully.`;
-  quickUploadStatus.className = "field-note success";
+  quickUploadStatus.textContent =
+    successCount > 0
+      ? `${successCount} file(s) uploaded successfully.${failedUploads.length ? ` Failed: ${failedUploads.join(", ")}` : ""}`
+      : "No files were uploaded.";
+  quickUploadStatus.className = successCount > 0 ? "field-note success" : "field-note error";
   pendingQuickUploadFiles = [];
-  assignUploadModal.close();
+  
+  setTimeout(() => assignUploadModal.close(), 1500);
 }
 
 function clearClientForm() {
@@ -447,24 +506,21 @@ function renderDocPlaceholderList() {
     dropField.className = "doc-drop-field";
     dropField.dataset.docDropId = entry.id;
 
-    if (entry.uploadedFileName) {
-      const linkedFile = currentUploadedDocuments.find((file) => file.name === entry.uploadedFileName);
-      if (linkedFile && isImageFile(linkedFile) && linkedFile.previewUrl) {
-        const image = document.createElement("img");
-        image.className = "doc-drop-thumb-image";
-        image.src = linkedFile.previewUrl;
-        image.alt = linkedFile.name;
-        dropField.appendChild(image);
-      } else {
-        const typeLabel = document.createElement("span");
-        typeLabel.className = "doc-drop-thumb-label";
-        typeLabel.textContent = getFileExtension(entry.uploadedFileName);
-        dropField.appendChild(typeLabel);
-      }
+    const attachedFiles = Array.isArray(entry.attachedFiles) ? entry.attachedFiles : [];
 
-      const text = document.createElement("span");
-      text.textContent = `Linked: ${entry.uploadedFileName}`;
-      dropField.appendChild(text);
+    if (attachedFiles.length) {
+      const attachedList = document.createElement("div");
+      attachedList.className = "doc-drop-file-list";
+
+      attachedFiles.forEach((attachedFile) => {
+        const linkedFile = currentUploadedDocuments.find((file) => file.name === attachedFile.original_name);
+        const fileChip = document.createElement("span");
+        fileChip.className = "doc-drop-thumb-label";
+        fileChip.textContent = linkedFile?.name || attachedFile.original_name;
+        attachedList.appendChild(fileChip);
+      });
+
+      dropField.appendChild(attachedList);
     } else {
       dropField.textContent = "Drop an uploaded file here";
     }
@@ -485,11 +541,13 @@ function renderDocPlaceholderList() {
 function normalizeUploadedDocuments(documents) {
   return (documents || []).map((item) =>
     typeof item === "string"
-      ? { name: item, previewUrl: "", mimeType: "" }
+      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", uploadedAt: "" }
       : {
           name: item.name,
           previewUrl: item.previewUrl || "",
-          mimeType: item.mimeType || ""
+          mimeType: item.mimeType || "",
+          s3Key: item.s3Key || "",
+          uploadedAt: item.uploadedAt || ""
         }
   );
 }
@@ -507,7 +565,6 @@ function isImageFile(file) {
 function renderUploadedFileBoxes() {
   uploadedFileBoxes.innerHTML = "";
   if (!currentUploadedDocuments.length) return;
-
   currentUploadedDocuments.forEach((file) => {
     const box = document.createElement("button");
     box.type = "button";
@@ -568,22 +625,21 @@ function updateSelectedFiles(files) {
     return;
   }
 
+  // We only add them to the visual UI here. They will be uploaded when the user clicks 'Save Case'
   const existingNames = new Set(currentUploadedDocuments.map((file) => file.name));
   selectedFiles.forEach((file) => {
     if (!existingNames.has(file.name)) {
       currentUploadedDocuments.push({
         name: file.name,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl: URL.createObjectURL(file), // Temporary visual preview
         mimeType: file.type || "",
         uploadedAt: Date.now()
-
       });
       newUploadNames.add(file.name);
       existingNames.add(file.name);
     }
   });
-
-  fileCount.textContent = `${currentUploadedDocuments.length} uploaded file(s) in this case.`;
+  fileCount.textContent = `${currentUploadedDocuments.length} uploaded file(s) ready to save.`;
   renderUploadedFileBoxes();
 }
 
@@ -705,6 +761,7 @@ if (toggleDarkModeBtn) {
     applyTheme(nextTheme);
   });
 }
+
 clientNames.addEventListener("input", updateClientStatus);
 
 caseList.addEventListener("click", (event) => {
@@ -738,7 +795,8 @@ addDocPlaceholderBtn.addEventListener("click", () => {
   currentDocPlaceholders.push({
     id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name,
-    status
+    status,
+    attachedFiles: []
   });
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
@@ -780,17 +838,24 @@ docPlaceholderList.addEventListener("drop", (event) => {
   dropField.classList.remove("drag-active");
   const fileName = event.dataTransfer.getData("text/plain");
   if (!fileName) return;
-  if (!currentUploadedDocuments.some((file) => file.name === fileName)) return;
+  const linkedFile = currentUploadedDocuments.find((file) => file.name === fileName);
+  if (!linkedFile) return;
 
   const placeholderId = dropField.dataset.docDropId;
   const placeholder = currentDocPlaceholders.find((item) => item.id === placeholderId);
   if (!placeholder) return;
 
-  placeholder.status = "Uploaded";
-  placeholder.uploadedFileName = fileName;
+  placeholder.attachedFiles = placeholder.attachedFiles || [];
+  if (!placeholder.attachedFiles.some((entry) => entry.original_name === linkedFile.name)) {
+    placeholder.attachedFiles.push({
+      original_name: linkedFile.name,
+      s3_key: linkedFile.s3Key || "",
+      mime_type: linkedFile.mimeType || ""
+    });
+  }
+  placeholder.status = placeholder.attachedFiles.length ? "Uploaded" : "Pending";
   renderDocPlaceholderList();
 });
-
 
 saveClientBtn.addEventListener("click", async () => {
   const full_name = clientFullName.value.trim();
@@ -890,14 +955,15 @@ document.addEventListener("drop", (event) => {
   updateSelectedFiles(event.dataTransfer.files);
 });
 
+// ==============================================================================
+// UPDATED: Save Case now also uploads selected files to S3/Postgres
+// ==============================================================================
 saveBtn.addEventListener("click", async () => {
   const name = caseName.value.trim();
   const inputClientNames = parseClientNames(clientNames.value);
   const deadline = caseDeadline.value || null;
   const short_description = caseDescription.value.trim();
   const status = caseStatus.value || "open";
-
-
 
   if (!name) {
     caseName.focus();
@@ -920,6 +986,9 @@ saveBtn.addEventListener("click", async () => {
   }
 
   try {
+    let targetCaseId;
+    const uploadedDocumentMap = new Map();
+
     if (editingCaseId) {
       const updated = await updateCase(editingCaseId, {
         name,
@@ -928,7 +997,8 @@ saveBtn.addEventListener("click", async () => {
         deadline,
         short_description
       });
-
+      targetCaseId = updated.id;
+      
       const caseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(editingCaseId));
       if (caseIndex >= 0) {
         state.cases[caseIndex] = {
@@ -949,8 +1019,9 @@ saveBtn.addEventListener("click", async () => {
           status,
           deadline,
           short_description
-    });
-
+      });
+      targetCaseId = created.id;
+      
       state.cases.unshift({
         id: created.id,
         title: created.name,
@@ -965,16 +1036,97 @@ saveBtn.addEventListener("click", async () => {
       });
     }
 
+    // NEW: Upload any files that were dropped into the modal
+    if (selectedFiles.length > 0) {
+      const uploadedDocuments = [];
+      const failedUploads = [];
+      for (const file of selectedFiles) {
+        try {
+          const uploadData = await uploadFile(file);
+          const linkedDocument = await linkCaseDocument(targetCaseId, {
+            original_name: file.name,
+            s3_key: uploadData.filePath,
+            mime_type: file.type || "application/octet-stream"
+          });
+
+          uploadedDocuments.push({
+            name: linkedDocument.original_name,
+            previewUrl: "",
+            mimeType: linkedDocument.mime_type || file.type || "",
+            s3Key: linkedDocument.s3_key,
+            uploadedAt: linkedDocument.uploaded_at || ""
+          });
+          uploadedDocumentMap.set(linkedDocument.original_name, linkedDocument.s3_key);
+        } catch (error) {
+          console.error(`Error uploading ${file.name} with new case:`, error);
+          failedUploads.push(file.name);
+        }
+      }
+
+      const targetCaseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(targetCaseId));
+      if (targetCaseIndex >= 0 && uploadedDocuments.length) {
+        state.cases[targetCaseIndex] = {
+          ...state.cases[targetCaseIndex],
+          uploadedDocuments: [
+            ...(state.cases[targetCaseIndex].uploadedDocuments || []),
+            ...uploadedDocuments
+          ]
+        };
+      }
+
+      if (failedUploads.length) {
+        window.alert(`Some files could not be uploaded: ${failedUploads.join(", ")}`);
+      }
+    }
+
+    if (currentDocPlaceholders.length > 0) {
+      const createdPlaceholders = await createCasePlaceholders(
+        targetCaseId,
+        currentDocPlaceholders.map((placeholder) => ({
+          name: placeholder.name,
+          status:
+            (placeholder.attachedFiles || []).some((file) => uploadedDocumentMap.get(file.original_name))
+              ? "Uploaded"
+              : placeholder.status || "Pending",
+          attached_files: (placeholder.attachedFiles || [])
+            .map((file) => {
+              const s3Key = uploadedDocumentMap.get(file.original_name);
+              if (!s3Key) return null;
+              return {
+                original_name: file.original_name,
+                s3_key: s3Key,
+                mime_type: file.mime_type || ""
+              };
+            })
+            .filter(Boolean)
+        }))
+      );
+
+      const targetCaseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(targetCaseId));
+      if (targetCaseIndex >= 0) {
+        state.cases[targetCaseIndex] = {
+          ...state.cases[targetCaseIndex],
+          requiredDocuments: createdPlaceholders.map((placeholder, index) => ({
+            id: placeholder.id,
+            name: placeholder.name,
+            status: placeholder.status || "Pending",
+            attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
+          }))
+        };
+      }
+    }
+
     state.deadlines = state.cases
       .filter((entry) => entry.deadline)
       .map((entry) => ({
         title: `${entry.title} deadline`,
         date: entry.deadline
       }));
-
+      
     dragDepth = 0;
     screenDropOverlay.classList.add("hidden");
     quickAddModal.close();
+    writeStoredCases(state.cases);
     render();
   } catch (error) {
     console.error(error);

@@ -1,39 +1,83 @@
-const { S3Client, CreateBucketCommand } = require('@aws-sdk/client-s3');
+const { CreateBucketCommand, HeadBucketCommand, S3Client } = require("@aws-sdk/client-s3");
 
-// ---------------------------------------------------------
-// S3 CLIENT CONFIGURATION (LocalStack)
-// ---------------------------------------------------------
+const bucketName = process.env.S3_BUCKET_NAME || "legal-documents";
+const s3Endpoint = process.env.S3_ENDPOINT || "http://localstack:4566";
+
 const s3Client = new S3Client({
-    region: process.env.AWS_REGION || 'us-east-1',
-    // Important: We use the Docker container name 'localstack' as the host!
-    endpoint: 'http://localstack:4566', 
-    // forcePathStyle is absolutely required for LocalStack and MinIO
-    forcePathStyle: true, 
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test'
-    }
+  region: process.env.AWS_REGION || "us-east-1",
+  endpoint: s3Endpoint,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test"
+  }
 });
 
-// ---------------------------------------------------------
-// INITIALIZE BUCKET
-// ---------------------------------------------------------
-// This function checks if our bucket exists, and creates it if it doesn't.
-async function initStorage() {
-    const bucketName = process.env.S3_BUCKET_NAME || 'legal-documents';
-    
-    try {
-        const command = new CreateBucketCommand({ Bucket: bucketName });
-        await s3Client.send(command);
-        console.log(`SUCCESS: Created S3 bucket '${bucketName}' in LocalStack!`);
-    } catch (error) {
-        // AWS throws a specific error if the bucket is already there. That's fine!
-        if (error.name === 'BucketAlreadyExists' || error.name === 'BucketAlreadyOwnedByYou') {
-            console.log(`READY: S3 bucket '${bucketName}' already exists.`);
-        } else {
-            console.error('ERROR: Could not connect to LocalStack S3:', error);
-        }
-    }
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { s3Client, initStorage };
+async function createBucketIfMissing() {
+  try {
+    await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    return;
+  } catch (error) {
+    const notFoundCodes = new Set(["NotFound", "NoSuchBucket", "Unknown", "404"]);
+
+    if (!notFoundCodes.has(error.name) && error.$metadata?.httpStatusCode !== 404) {
+      throw error;
+    }
+  }
+
+  await s3Client.send(new CreateBucketCommand({ Bucket: bucketName }));
+}
+
+async function initStorage() {
+  const maxAttempts = 6;
+  const retryDelayMs = 2000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await createBucketIfMissing();
+      console.log(`S3 storage ready for bucket '${bucketName}'.`);
+      return;
+    } catch (error) {
+      if (error.name === "BucketAlreadyExists" || error.name === "BucketAlreadyOwnedByYou") {
+        console.log(`S3 storage ready for bucket '${bucketName}'.`);
+        return;
+      }
+
+      const isConnectionRefused =
+        error.code === "ECONNREFUSED" ||
+        error.errno === "ECONNREFUSED" ||
+        error.name === "TimeoutError" ||
+        String(error.message || "").includes("ECONNREFUSED") ||
+        String(error.cause?.message || "").includes("ECONNREFUSED");
+
+      if (attempt < maxAttempts && isConnectionRefused) {
+        console.log(
+          `LocalStack not ready yet. Retrying in 2 seconds... (Attempt ${attempt}/${maxAttempts})`
+        );
+        await wait(retryDelayMs);
+        continue;
+      }
+
+      if (attempt < maxAttempts) {
+        console.log(
+          `S3 initialization failed. Retrying in 2 seconds... (Attempt ${attempt}/${maxAttempts})`
+        );
+        await wait(retryDelayMs);
+        continue;
+      }
+
+      console.error("Failed to initialize S3 storage after all retry attempts.");
+      throw error;
+    }
+  }
+}
+
+async function ensureStorageReady() {
+  await initStorage();
+}
+
+module.exports = { bucketName, ensureStorageReady, initStorage, s3Client };
