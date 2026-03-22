@@ -216,11 +216,16 @@ body.dark-mode .brand-copy p {
   z-index: 1;
 }
 
+.dashboard-main {
+  display: grid;
+  gap: 1.15rem;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.85rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0;
 }
 
 .card,
@@ -252,7 +257,7 @@ body.dark-mode .brand-copy p {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.85rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0;
 }
 
 .panel {

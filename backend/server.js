@@ -25,23 +25,106 @@ app.get("/remote-setup.html", (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NEXTACT - Remote Access Setup</title>
     <style>
-      body { margin: 0; font-family: Arial, sans-serif; background: linear-gradient(180deg, #f7faff 0%, #edf4ff 100%); color: #1f2a44; }
-      main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-      .card { width: min(460px, 100%); background: #fff; border: 1px solid #dbe4f3; border-radius: 24px; box-shadow: 0 24px 50px rgba(33, 53, 107, 0.14); padding: 28px; }
-      h1 { margin: 0 0 10px; font-size: 1.8rem; }
-      p { color: #5d6d8f; line-height: 1.5; }
-      label { display: block; font-weight: 600; margin: 14px 0 8px; }
-      input { width: 100%; box-sizing: border-box; border: 1px solid #d5deef; border-radius: 14px; padding: 14px 16px; font: inherit; }
-      button { margin-top: 18px; width: 100%; border: 0; border-radius: 14px; padding: 14px 16px; background: #3454d1; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+      :root {
+        --bg: #edf2fb;
+        --card: rgba(255, 255, 255, 0.82);
+        --card-strong: rgba(255, 255, 255, 0.94);
+        --text: #182133;
+        --muted: #5d6a82;
+        --line: rgba(129, 146, 181, 0.24);
+        --primary: #3457d5;
+        --primary-dark: #2545b7;
+        --shadow: 0 28px 64px rgba(24, 35, 67, 0.14);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background:
+          linear-gradient(180deg, rgba(14, 24, 48, 0.18), rgba(14, 24, 48, 0.52)),
+          url("https://images.unsplash.com/photo-1505664194779-8beaceb93744?auto=format&fit=crop&w=1800&q=80") center/cover fixed no-repeat,
+          linear-gradient(150deg, #f8faff, #eef3ff);
+        color: var(--text);
+        line-height: 1.45;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.34), transparent 24%),
+          radial-gradient(circle at bottom right, rgba(52, 87, 213, 0.18), transparent 28%);
+        pointer-events: none;
+      }
+      main { min-height: 100vh; display: grid; place-items: center; padding: 1.25rem; }
+      .card {
+        width: min(430px, 100%);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 1.5rem;
+        display: grid;
+        gap: 0.62rem;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+        position: relative;
+        z-index: 1;
+      }
+      .logo {
+        width: 5.25rem;
+        height: 5.25rem;
+        object-fit: contain;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--line);
+        padding: 0.34rem;
+        box-shadow: 0 14px 28px rgba(37, 69, 183, 0.12);
+      }
+      .back-link {
+        color: var(--primary);
+        text-decoration: none;
+        font-size: 0.88rem;
+        font-weight: 600;
+      }
+      h1 { margin: 0; font-size: 1.8rem; }
+      p { color: var(--muted); line-height: 1.5; margin: 0; }
+      label { display: block; font-size: 0.92rem; font-weight: 600; margin-top: 0.2rem; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.86rem 0.92rem;
+        background: var(--card-strong);
+        color: var(--text);
+        font: inherit;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      }
+      button {
+        margin-top: 0.25rem;
+        width: 100%;
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #4164e1, var(--primary-dark));
+        color: #fff;
+        padding: 0.84rem 1rem;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        min-height: 44px;
+        box-shadow: 0 14px 28px rgba(37, 69, 183, 0.24);
+      }
       button:disabled { opacity: 0.55; cursor: not-allowed; }
-      .message { min-height: 1.3em; margin-top: 14px; color: #b0303f; }
+      .message { min-height: 1.1rem; margin: 0.15rem 0 0; font-size: 0.85rem; color: #b0303f; }
       .message.success { color: #0d7a4a; }
-      .muted { margin: 0; }
+      .muted { margin: 0 0 0.25rem; font-size: 0.9rem; }
     </style>
   </head>
   <body>
     <main>
       <section class="card">
+        <img src="/icons/logo.png" alt="NEXTACT logo" class="logo" />
+        <a href="/home.html" class="back-link">← Back to homepage</a>
         <h1>Set Up Your Remote Access</h1>
         <p id="setupEmailText" class="muted">Validating your invitation link...</p>
         <label for="password">Password</label>
