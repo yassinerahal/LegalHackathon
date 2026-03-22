@@ -77,6 +77,32 @@ app.put("/api/clients/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/clients/:id", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    await client.query("DELETE FROM cases WHERE client_id = $1", [req.params.id]);
+
+    const result = await client.query("DELETE FROM clients WHERE id = $1 RETURNING id", [req.params.id]);
+
+    if (!result.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    await client.query("COMMIT");
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    res.status(500).json({ error: error.message || "Failed to delete client" });
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/api/clients/:id/cases", async (req, res) => {
   try {
     const result = await pool.query(

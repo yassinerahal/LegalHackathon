@@ -71,6 +71,12 @@ async function updateClient(id, payload) {
   });
 }
 
+async function deleteClient(id) {
+  return apiRequest(`/clients/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
 async function signup(payload) {
   return apiRequest("/auth/signup", {
     method: "POST",

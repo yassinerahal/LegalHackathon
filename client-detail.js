@@ -13,6 +13,7 @@ const clientCity = document.getElementById("clientCity");
 const clientState = document.getElementById("clientState");
 const relatedCasesList = document.getElementById("relatedCasesList");
 const relatedCasesSection = document.getElementById("relatedCasesSection");
+const deleteClientBtn = document.getElementById("deleteClientBtn");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
@@ -138,6 +139,23 @@ async function handleSaveClient(event) {
   }
 }
 
+async function handleDeleteClient() {
+  if (!currentClientId) return;
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this client? This will also remove any cases linked to this client."
+  );
+  if (!confirmed) return;
+
+  try {
+    await deleteClient(currentClientId);
+    window.location.href = "clients.html";
+  } catch (error) {
+    clientInfo.textContent = error.message || "Failed to delete client.";
+    clientInfo.className = "field-note error";
+  }
+}
+
 relatedCasesList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-case-id]");
   if (!row) return;
@@ -161,6 +179,7 @@ logoutBtn.addEventListener("click", () => {
 });
 
 clientSettingsForm.addEventListener("submit", handleSaveClient);
+deleteClientBtn.addEventListener("click", handleDeleteClient);
 
 async function initPage() {
   const clientId = getClientIdFromQuery();

@@ -474,6 +474,17 @@ button:hover {
   background: var(--primary-dark);
 }
 
+.btn-danger {
+  background: linear-gradient(180deg, #d14f4f, #b93535);
+  color: #fff;
+  padding: 0.78rem 1.05rem;
+  box-shadow: 0 14px 28px rgba(185, 53, 53, 0.2);
+}
+
+.btn-danger:hover {
+  background: #a92d2d;
+}
+
 .btn-ghost {
   background: color-mix(in srgb, var(--card-strong) 88%, var(--line) 12%);
   border: 1px solid var(--line);
