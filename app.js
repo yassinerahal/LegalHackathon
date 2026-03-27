@@ -5,9 +5,12 @@ const state = {
   cases: [],
   deadlines: [],
   clients: [],
-  documents: 0
+  documents: 0,
+  pendingUsers: [],
+  allUsers: []
 };
 
+const dashboardMain = document.querySelector(".dashboard-main");
 const activeCases = document.getElementById("activeCases");
 const totalClients = document.getElementById("totalClients");
 const upcomingDeadlines = document.getElementById("upcomingDeadlines");
@@ -19,6 +22,9 @@ const calendarBtn = document.getElementById("calendarBtn");
 const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
 const viewAllClientsBtn = document.getElementById("viewAllClientsBtn");
 const newCaseMainBtn = document.getElementById("newCaseMainBtn");
+const adminMainCard = document.getElementById("adminMainCard");
+const adminPendingCount = document.getElementById("adminPendingCount");
+const openAdminPanelBtn = document.getElementById("openAdminPanelBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const quickUploadDropZone = document.getElementById("quickUploadDropZone");
 const quickUploadDocuments = document.getElementById("quickUploadDocuments");
@@ -61,6 +67,8 @@ const docPlaceholderName = document.getElementById("docPlaceholderName");
 const docPlaceholderStatus = document.getElementById("docPlaceholderStatus");
 const addDocPlaceholderBtn = document.getElementById("addDocPlaceholderBtn");
 const docPlaceholderList = document.getElementById("docPlaceholderList");
+const caseTeamSection = document.getElementById("caseTeamSection");
+const caseTeamList = document.getElementById("caseTeamList");
 
 let selectedFiles = [];
 let currentUploadedDocuments = [];
@@ -69,6 +77,8 @@ let dragDepth = 0;
 let editingCaseId = null;
 let currentDocPlaceholders = [];
 let pendingQuickUploadFiles = [];
+let assignableCaseUsers = [];
+let selectedCaseAssigneeIds = new Set();
 const SESSION_KEY = "nextact_current_user";
 const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
@@ -147,12 +157,33 @@ function writeStoredCases(cases) {
 }
 
 async function initDashboard() {
-  requireSession();
+  const session = requireSession();
+  if (!session) return;
   applyTheme(readTheme());
   renderLoggedInUser();
+  if (newCaseMainBtn) {
+    newCaseMainBtn.hidden = !canCreateCases(session);
+  }
+  if (adminMainCard) {
+    adminMainCard.classList.toggle("hidden", session.role !== "admin");
+  }
 
   try {
-    const [cases, clients] = await Promise.all([getCases(), getClients()]);
+    const requests = [getCases(), getClients()];
+    if (session.role === "admin" || session.role === "lawyer") {
+      requests.push(getAssignableUsers());
+    }
+    if (session.role === "admin") {
+      requests.push(getPendingUsers(), getAllUsers());
+    }
+
+    const responses = await Promise.all(requests);
+    const cases = responses.shift() || [];
+    const clients = responses.shift() || [];
+    const assignableUsers =
+      session.role === "admin" || session.role === "lawyer" ? responses.shift() || [] : [];
+    const pendingUsers = session.role === "admin" ? responses.shift() || [] : [];
+    const allUsers = session.role === "admin" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
     const caseDocumentsById = new Map(
       (
@@ -170,8 +201,12 @@ async function initDashboard() {
       title: entry.name,
       stage: entry.short_description || "No description",
       client_id: entry.client_id,
+      owner_id: entry.owner_id || null,
       clientNames: entry.client_name ? [entry.client_name] : [],
       status: entry.status || "open",
+      can_edit: Boolean(entry.can_edit),
+      is_owner: Boolean(entry.is_owner),
+      is_assigned: Boolean(entry.is_assigned),
       deadline: entry.deadline || "",
       comments: storedCasesById.get(String(entry.id))?.comments || [],
       requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
@@ -196,6 +231,9 @@ async function initDashboard() {
         title: `${entry.title} deadline`,
         date: entry.deadline
       }));
+    state.pendingUsers = Array.isArray(pendingUsers) ? pendingUsers : [];
+    state.allUsers = Array.isArray(allUsers) ? allUsers : [];
+    assignableCaseUsers = Array.isArray(assignableUsers) ? assignableUsers : [];
     writeStoredCases(state.cases);
     render();
   } catch (error) {
@@ -354,12 +392,73 @@ function render() {
   renderDeadlines();
   renderClients();
   renderQuickUploadCaseOptions();
+  renderAdminMainCard();
+  renderAdminPendingPanel();
+}
+
+function renderAdminMainCard() {
+  const session = getStoredSession();
+  if (!adminMainCard || session?.role !== "admin") return;
+  if (adminPendingCount) {
+    adminPendingCount.textContent = String(state.pendingUsers.length);
+  }
+}
+
+function renderAdminPendingPanel() {
+  const session = getStoredSession();
+  const existingPanel = document.getElementById("adminPendingPanel");
+  if (!dashboardMain || session?.role !== "admin") {
+    if (existingPanel) existingPanel.remove();
+    return;
+  }
+
+  const panel = existingPanel || document.createElement("section");
+  panel.id = "adminPendingPanel";
+  panel.className = "panel";
+
+  const listMarkup = state.allUsers.length
+    ? state.allUsers
+        .map(
+          (user) => `
+            <li class="admin-pending-item" data-user-id="${user.id}">
+              <div>
+                <strong>${user.full_name || user.username}</strong>
+                <p class="meta">${user.email} • ${user.is_approved ? "Approved" : "Pending"}</p>
+              </div>
+              <div class="admin-pending-actions">
+                <select data-user-role>
+                  <option value="lawyer" ${user.role === "lawyer" ? "selected" : ""}>Lawyer</option>
+                  <option value="assistant" ${user.role === "assistant" ? "selected" : ""}>Assistant</option>
+                  <option value="client" ${user.role === "client" ? "selected" : ""}>Client</option>
+                  <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+                </select>
+                <button type="button" class="btn-primary" data-save-user-role>
+                  ${user.is_approved ? "Save Role" : "Approve"}
+                </button>
+              </div>
+            </li>
+          `
+        )
+        .join("")
+    : '<li><p class="field-note">No registered users found.</p></li>';
+
+  panel.innerHTML = `
+    <div class="panel-head">
+      <h3>User Management</h3>
+    </div>
+    <ul class="list">${listMarkup}</ul>
+  `;
+
+  if (!existingPanel) {
+    dashboardMain.appendChild(panel);
+  }
 }
 
 function renderQuickUploadCaseOptions() {
   if (!assignUploadCaseSelect) return;
   assignUploadCaseSelect.innerHTML = "";
-  state.cases.forEach((entry) => {
+  const editableCases = state.cases.filter((entry) => canEditCase(getStoredSession(), entry));
+  editableCases.forEach((entry) => {
     const option = document.createElement("option");
     option.value = entry.id;
     option.textContent = entry.title;
@@ -371,8 +470,38 @@ function openAssignUploadModal(files) {
   pendingQuickUploadFiles = Array.from(files || []);
   if (!pendingQuickUploadFiles.length) return;
   renderQuickUploadCaseOptions();
+  if (!assignUploadCaseSelect.options.length) {
+    quickUploadStatus.textContent = "You do not have upload access to any cases.";
+    quickUploadStatus.className = "field-note error";
+    pendingQuickUploadFiles = [];
+    return;
+  }
   assignUploadFileCount.textContent = `${pendingQuickUploadFiles.length} file(s) ready to upload.`;
   assignUploadModal.showModal();
+}
+
+async function handleSaveUserRoleClick(button) {
+  const item = button.closest("[data-user-id]");
+  if (!item) return;
+
+  const userId = item.dataset.userId;
+  const roleSelect = item.querySelector("[data-user-role]");
+  const selectedRole = roleSelect?.value || "lawyer";
+
+  try {
+    button.disabled = true;
+    const result = await updateUserRole(userId, selectedRole);
+    state.allUsers = state.allUsers.map((user) =>
+      String(user.id) === String(userId) ? result.user : user
+    );
+    state.pendingUsers = state.allUsers.filter((user) => !user.is_approved || user.role === "pending");
+    renderAdminMainCard();
+    renderAdminPendingPanel();
+  } catch (error) {
+    console.error("Failed to update user role:", error);
+    window.alert(error.message || "Failed to update user role.");
+    button.disabled = false;
+  }
 }
 
 // ==============================================================================
@@ -471,12 +600,14 @@ function clearCaseForm() {
   currentUploadedDocuments = [];
   newUploadNames = new Set();
   currentDocPlaceholders = [];
+  selectedCaseAssigneeIds = new Set();
   caseDocuments.value = "";
   fileCount.textContent = "";
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
   renderDocPlaceholderList();
   renderUploadedFileBoxes();
+  renderCaseTeamSelection();
   clientStatus.textContent = "";
   clientStatus.className = "field-note";
   clientForm.classList.add("hidden");
@@ -643,7 +774,7 @@ function updateSelectedFiles(files) {
   renderUploadedFileBoxes();
 }
 
-function openEditCase(caseId) {
+async function openEditCase(caseId) {
   const entry = state.cases.find((item) => item.id === caseId);
   if (!entry) return;
 
@@ -659,19 +790,35 @@ function openEditCase(caseId) {
   currentUploadedDocuments = normalizeUploadedDocuments(entry.uploadedDocuments);
   newUploadNames = new Set();
   currentDocPlaceholders = (entry.requiredDocuments || []).map((doc) => ({ ...doc }));
+  selectedCaseAssigneeIds = new Set();
   caseDocuments.value = "";
   fileCount.textContent = currentUploadedDocuments.length
     ? `${currentUploadedDocuments.length} uploaded file(s) in this case.`
     : "";
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
+
+  if (canManageCaseTeam(entry)) {
+    try {
+      const assignments = await getCaseAssignments(caseId);
+      selectedCaseAssigneeIds = new Set(assignments.map((user) => String(user.id)));
+    } catch (error) {
+      console.error("Failed to load case assignments for edit:", error);
+    }
+  }
+
   renderDocPlaceholderList();
   renderUploadedFileBoxes();
+  renderCaseTeamSelection(entry);
   updateClientStatus();
   quickAddModal.showModal();
 }
 
 newCaseMainBtn.addEventListener("click", () => {
+  if (!canCreateCases(getStoredSession())) {
+    window.alert("Your role cannot create new cases.");
+    return;
+  }
   clearCaseForm();
   quickAddModal.showModal();
 });
@@ -776,6 +923,96 @@ if (clientList) {
     const row = event.target.closest("[data-client-id]");
     if (row) {
       window.location.href = `client-detail.html?id=${encodeURIComponent(row.dataset.clientId)}`;
+    }
+  });
+}
+
+function canManageCaseTeam(entry = null) {
+  const session = getStoredSession();
+  if (!session) return false;
+  if (session.role === "admin") return true;
+  if (session.role !== "lawyer") return false;
+  return !entry || Boolean(entry.is_owner);
+}
+
+function renderCaseTeamSelection(entry = null) {
+  if (!caseTeamSection || !caseTeamList) return;
+
+  const canManageTeam = canManageCaseTeam(entry);
+  caseTeamSection.classList.toggle("hidden", !canManageTeam);
+  if (!canManageTeam) {
+    caseTeamList.innerHTML = "";
+    return;
+  }
+
+  const session = getStoredSession();
+  const fixedOwnerId = entry?.owner_id ? String(entry.owner_id) : session?.id ? String(session.id) : "";
+  const eligibleUsers = assignableCaseUsers.filter(
+    (user) =>
+      (user.role === "lawyer" || user.role === "assistant") &&
+      String(user.id) !== fixedOwnerId
+  );
+  const fixedOwner = assignableCaseUsers.find((user) => String(user.id) === fixedOwnerId);
+  if (!eligibleUsers.length) {
+    caseTeamList.innerHTML = "";
+  }
+
+  const fixedMarkup = fixedOwner
+    ? `
+      <div class="assignment-selection-item assignment-selection-item-fixed">
+        <input type="checkbox" checked disabled />
+        <span>${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
+      </div>
+    `
+    : "";
+
+  const selectableMarkup = eligibleUsers
+    .map(
+      (user) => `
+        <label class="assignment-selection-item">
+          <input
+            type="checkbox"
+            data-case-assignee
+            value="${user.id}"
+            ${selectedCaseAssigneeIds.has(String(user.id)) ? "checked" : ""}
+          />
+          <span>${user.full_name || user.username} (${user.role})</span>
+        </label>
+      `
+    )
+    .join("");
+
+  caseTeamList.innerHTML =
+    fixedMarkup +
+    (selectableMarkup || '<p class="field-note">No additional assistants or lawyers available.</p>');
+}
+
+if (dashboardMain) {
+  dashboardMain.addEventListener("click", (event) => {
+    const saveRoleBtn = event.target.closest("[data-save-user-role]");
+    if (saveRoleBtn) {
+      handleSaveUserRoleClick(saveRoleBtn);
+      return;
+    }
+
+    const openAdminBtn = event.target.closest("#openAdminPanelBtn");
+    if (!openAdminBtn) return;
+
+    const adminPanel = document.getElementById("adminPendingPanel");
+    if (adminPanel) {
+      adminPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+}
+
+if (caseTeamList) {
+  caseTeamList.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-case-assignee]");
+    if (!checkbox) return;
+    if (checkbox.checked) {
+      selectedCaseAssigneeIds.add(String(checkbox.value));
+    } else {
+      selectedCaseAssigneeIds.delete(String(checkbox.value));
     }
   });
 }
@@ -1114,6 +1351,13 @@ saveBtn.addEventListener("click", async () => {
           }))
         };
       }
+    }
+
+    if (selectedCaseAssigneeIds.size > 0) {
+      const selectedIds = Array.from(selectedCaseAssigneeIds);
+      await Promise.all(
+        selectedIds.map((userId) => assignUserToCase(targetCaseId, userId))
+      );
     }
 
     state.deadlines = state.cases

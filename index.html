@@ -61,6 +61,16 @@
             </div>
             <p id="quickUploadStatus" class="field-note"></p>
           </article>
+          <article id="adminMainCard" class="module-card hidden">
+            <h4>Team & Roles</h4>
+            <p>Approve pending registrations and assign the right internal role.</p>
+            <div class="admin-main-card-body">
+              <p class="admin-main-count">
+                <strong id="adminPendingCount">0</strong> pending approval
+              </p>
+              <button id="openAdminPanelBtn" class="btn-primary" type="button">Manage Roles</button>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -193,6 +203,12 @@
             <button type="button" id="addDocPlaceholderBtn" class="btn-ghost">Add</button>
           </div>
           <ul id="docPlaceholderList" class="doc-placeholder-list"></ul>
+        </section>
+
+        <section id="caseTeamSection" class="doc-placeholder-section hidden">
+          <h4>Case Team Access</h4>
+          <p class="field-note">Select assistants or lawyers who should be able to edit this case.</p>
+          <div id="caseTeamList" class="assignment-selection-list"></div>
         </section>
 
         <div class="modal-actions">

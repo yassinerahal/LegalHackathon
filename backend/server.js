@@ -15,6 +15,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const REMOTE_ACCESS_EXPIRY_HOURS = Number(process.env.REMOTE_ACCESS_EXPIRY_HOURS || 48);
+const BOOTSTRAP_ADMIN_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || "admin";
+const BOOTSTRAP_ADMIN_EMAIL = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@nextact.local").trim().toLowerCase();
+const BOOTSTRAP_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin123!";
 
 app.use(cors());
 app.use(express.json());
@@ -268,11 +271,59 @@ async function buildQrCodeDataUrl(value) {
   });
 }
 
+function normalizeUserRole(role) {
+  if (role === "staff") return "lawyer";
+  if (role === "remote_user") return "client";
+  return role || "pending";
+}
+
+function buildAuthUser(user) {
+  const role = normalizeUserRole(user.role);
+  return {
+    id: user.id,
+    username: user.username || user.full_name || "",
+    full_name: user.full_name || user.username || "",
+    email: user.email,
+    role,
+    is_approved: Boolean(user.is_approved ?? role !== "pending"),
+    client_id: user.client_id || null
+  };
+}
+
 async function ensureRemoteAccessSchema() {
   await pool.query(`
     ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS role VARCHAR(50) NOT NULL DEFAULT 'staff',
+    ADD COLUMN IF NOT EXISTS username VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS role VARCHAR(50) NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS client_id INTEGER UNIQUE
+  `);
+
+  await pool.query(`
+    UPDATE users
+    SET username = COALESCE(NULLIF(username, ''), full_name)
+    WHERE username IS NULL OR username = ''
+  `);
+
+  await pool.query(`
+    UPDATE users
+    SET role = CASE
+      WHEN role = 'staff' THEN 'lawyer'
+      WHEN role = 'remote_user' THEN 'client'
+      ELSE role
+    END
+  `);
+
+  await pool.query(`
+    UPDATE users
+    SET is_approved = TRUE
+    WHERE role IN ('admin', 'lawyer', 'assistant', 'client')
+      AND is_approved = FALSE
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+    ALTER COLUMN username SET NOT NULL
   `);
 
   await pool.query(`
@@ -302,6 +353,21 @@ async function ensureRemoteAccessSchema() {
     )
   `);
 
+  await pool.query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS case_assignments (
+      id SERIAL PRIMARY KEY,
+      case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (case_id, user_id)
+    )
+  `);
+
   // Older Postgres volumes may predate the document upload feature, so create
   // these tables at startup as a safe forward migration.
   await pool.query(`
@@ -327,6 +393,43 @@ async function ensureRemoteAccessSchema() {
   `);
 }
 
+async function ensureBootstrapAdmin() {
+  const existingAdmin = await pool.query(
+    `
+    SELECT id
+    FROM users
+    WHERE role = 'admin'
+    LIMIT 1
+    `
+  );
+
+  if (existingAdmin.rows.length) {
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(BOOTSTRAP_ADMIN_PASSWORD, 10);
+  await pool.query(
+    `
+    INSERT INTO users (username, full_name, email, password_hash, role, is_approved)
+    VALUES ($1, $2, $3, $4, 'admin', TRUE)
+    ON CONFLICT (email) DO UPDATE
+    SET username = EXCLUDED.username,
+        full_name = EXCLUDED.full_name,
+        password_hash = EXCLUDED.password_hash,
+        role = 'admin',
+        is_approved = TRUE
+    `,
+    [
+      BOOTSTRAP_ADMIN_USERNAME,
+      BOOTSTRAP_ADMIN_USERNAME,
+      BOOTSTRAP_ADMIN_EMAIL,
+      passwordHash
+    ]
+  );
+
+  console.log(`Bootstrap admin ready: ${BOOTSTRAP_ADMIN_EMAIL}`);
+}
+
 function getBearerToken(req) {
   const authHeader = req.headers.authorization || "";
   return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -340,27 +443,101 @@ function requireAuth(req, res, next) {
     }
 
     req.auth = jwt.verify(token, JWT_SECRET);
-    next();
+    if (!req.auth.is_approved || req.auth.role === "pending") {
+      return res.status(403).json({ error: "Waiting for Admin Approval" });
+    }
+    return next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
 }
 
-function requireStaffAuth(req, res, next) {
-  return requireAuth(req, res, () => {
-    // Backward compatibility: older staff sessions may not include a role claim.
-    const isLegacyStaffSession = !req.auth.role && req.auth.email && !req.auth.client_id;
-    if (req.auth.role !== "staff" && !isLegacyStaffSession) {
-      return res.status(403).json({ error: "Staff access only" });
+function requireRole(roles) {
+  return (req, res, next) =>
+    requireAuth(req, res, () => {
+      if (!roles.includes(req.auth.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      return next();
+    });
+}
+
+const requireStaffAuth = requireRole(["admin", "lawyer", "assistant"]);
+
+async function getCaseAccessRow(caseId, userId) {
+  const result = await pool.query(
+    `
+    SELECT
+      cases.id,
+      cases.owner_id,
+      EXISTS (
+        SELECT 1
+        FROM case_assignments
+        WHERE case_id = cases.id AND user_id = $2
+      ) AS is_assigned
+    FROM cases
+    WHERE cases.id = $1
+    `,
+    [caseId, userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function requireCaseEditAccess(req, res, next) {
+  return requireStaffAuth(req, res, async () => {
+    try {
+      const caseAccess = await getCaseAccessRow(req.params.id, req.auth.id);
+      if (!caseAccess) {
+        return res.status(404).json({ error: "Case not found" });
+      }
+
+      const isOwner = String(caseAccess.owner_id || "") === String(req.auth.id);
+      const isAssigned = Boolean(caseAccess.is_assigned);
+      const canEdit =
+        req.auth.role === "admin" ||
+        (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
+        (req.auth.role === "assistant" && isAssigned);
+
+      if (!canEdit) {
+        return res.status(403).json({ error: "You do not have edit access to this case" });
+      }
+
+      req.caseAccess = { ...caseAccess, isOwner, isAssigned, canEdit };
+      return next();
+    } catch (error) {
+      console.error("Case access check failed:", error);
+      return res.status(500).json({ error: "Failed to verify case access" });
     }
-    return next();
+  });
+}
+
+function requireCaseOwnerOrAdmin(req, res, next) {
+  return requireStaffAuth(req, res, async () => {
+    try {
+      const caseAccess = await getCaseAccessRow(req.params.id, req.auth.id);
+      if (!caseAccess) {
+        return res.status(404).json({ error: "Case not found" });
+      }
+
+      const isOwner = String(caseAccess.owner_id || "") === String(req.auth.id);
+      if (req.auth.role !== "admin" && !isOwner) {
+        return res.status(403).json({ error: "Only the case owner or an admin can do this" });
+      }
+
+      req.caseAccess = { ...caseAccess, isOwner, isAssigned: Boolean(caseAccess.is_assigned) };
+      return next();
+    } catch (error) {
+      console.error("Case ownership check failed:", error);
+      return res.status(500).json({ error: "Failed to verify case ownership" });
+    }
   });
 }
 
 function requireRemoteUserAuth(req, res, next) {
   return requireAuth(req, res, () => {
     // Backend enforcement: remote users are always scoped to their linked client record.
-    if (req.auth.role !== "remote_user" || !req.auth.client_id) {
+    if (req.auth.role !== "client" || !req.auth.client_id) {
       return res.status(403).json({ error: "Remote user access only" });
     }
     return next();
@@ -409,7 +586,7 @@ app.get("/api/health", async (req, res) => {
 // ---------------------------------------------------------
 // FILE UPLOAD ROUTE (LOCALSTACK S3)
 // ---------------------------------------------------------
-app.post("/api/upload", upload.single("document"), async (req, res) => {
+app.post("/api/upload", requireStaffAuth, upload.single("document"), async (req, res) => {
   try {
     const file = req.file;
     if (!file) {
@@ -442,7 +619,7 @@ app.post("/api/upload", upload.single("document"), async (req, res) => {
 });
 
 // Save document metadata to PostgreSQL
-app.post("/api/cases/:id/documents", async (req, res) => {
+app.post("/api/cases/:id/documents", requireCaseEditAccess, async (req, res) => {
   try {
     const caseId = req.params.id;
     const { original_name, s3_key, mime_type } = req.body;
@@ -469,7 +646,7 @@ app.post("/api/cases/:id/documents", async (req, res) => {
   }
 });
 
-app.get("/api/cases/:id/documents", async (req, res) => {
+app.get("/api/cases/:id/documents", requireStaffAuth, async (req, res) => {
   try {
     const caseId = req.params.id;
 
@@ -499,7 +676,7 @@ app.get("/api/cases/:id/documents", async (req, res) => {
   }
 });
 
-app.get("/api/documents/:s3Key/download", async (req, res) => {
+app.get("/api/documents/:s3Key/download", requireStaffAuth, async (req, res) => {
   try {
     const s3Key = String(req.params.s3Key || "").trim();
     if (!s3Key) {
@@ -564,7 +741,7 @@ app.get("/api/documents/:s3Key/download", async (req, res) => {
   }
 });
 
-app.post("/api/cases/:id/placeholders", async (req, res) => {
+app.post("/api/cases/:id/placeholders", requireCaseEditAccess, async (req, res) => {
   try {
     const caseId = req.params.id;
     const placeholders = Array.isArray(req.body) ? req.body : [];
@@ -615,7 +792,7 @@ app.post("/api/cases/:id/placeholders", async (req, res) => {
   }
 });
 
-app.get("/api/cases/:id/placeholders", async (req, res) => {
+app.get("/api/cases/:id/placeholders", requireStaffAuth, async (req, res) => {
   try {
     const caseId = req.params.id;
 
@@ -644,7 +821,7 @@ app.get("/api/cases/:id/placeholders", async (req, res) => {
   }
 });
 
-app.put("/api/cases/:id/placeholders/:placeholderId/link", async (req, res) => {
+app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess, async (req, res) => {
   try {
     const caseId = req.params.id;
     const placeholderId = req.params.placeholderId;
@@ -802,7 +979,7 @@ app.post("/api/clients/:id/remote-access", requireStaffAuth, async (req, res) =>
         SELECT id
         FROM users
         WHERE LOWER(email) = $1
-          AND (role <> 'remote_user' OR client_id IS DISTINCT FROM $2)
+          AND (role <> 'client' OR client_id IS DISTINCT FROM $2)
       `,
       [client.email.trim().toLowerCase(), client.id]
     );
@@ -891,16 +1068,44 @@ app.post("/api/clients", requireStaffAuth, async (req, res) => {
 
 app.get("/api/cases", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query(`
+    const result = await pool.query(
+      `
       SELECT
         cases.*,
-        clients.full_name AS client_name
+        clients.full_name AS client_name,
+        owner.username AS owner_username,
+        owner.full_name AS owner_full_name,
+        EXISTS (
+          SELECT 1
+          FROM case_assignments
+          WHERE case_assignments.case_id = cases.id
+            AND case_assignments.user_id = $1
+        ) AS is_assigned
       FROM cases
       JOIN clients ON cases.client_id = clients.id
+      LEFT JOIN users AS owner ON owner.id = cases.owner_id
       ORDER BY cases.created_at DESC
-    `);
+      `,
+      [req.auth.id]
+    );
 
-    res.json(result.rows);
+    res.json(
+      result.rows.map((entry) => {
+        const isOwner = String(entry.owner_id || "") === String(req.auth.id);
+        const isAssigned = Boolean(entry.is_assigned);
+        const canEdit =
+          req.auth.role === "admin" ||
+          (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
+          (req.auth.role === "assistant" && isAssigned);
+
+        return {
+          ...entry,
+          is_owner: isOwner,
+          is_assigned: isAssigned,
+          can_edit: canEdit
+        };
+      })
+    );
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message || "Failed to fetch cases" });
@@ -913,26 +1118,48 @@ app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
       `
       SELECT
         cases.*,
-        clients.full_name AS client_name
+        clients.full_name AS client_name,
+        owner.username AS owner_username,
+        owner.full_name AS owner_full_name,
+        EXISTS (
+          SELECT 1
+          FROM case_assignments
+          WHERE case_assignments.case_id = cases.id
+            AND case_assignments.user_id = $2
+        ) AS is_assigned
       FROM cases
       JOIN clients ON cases.client_id = clients.id
+      LEFT JOIN users AS owner ON owner.id = cases.owner_id
       WHERE cases.id = $1
       `,
-      [req.params.id]
+      [req.params.id, req.auth.id]
     );
 
     if (!result.rows.length) {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    res.json(result.rows[0]);
+    const entry = result.rows[0];
+    const isOwner = String(entry.owner_id || "") === String(req.auth.id);
+    const isAssigned = Boolean(entry.is_assigned);
+    const canEdit =
+      req.auth.role === "admin" ||
+      (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
+      (req.auth.role === "assistant" && isAssigned);
+
+    res.json({
+      ...entry,
+      is_owner: isOwner,
+      is_assigned: isAssigned,
+      can_edit: canEdit
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch case" });
   }
 });
 
-app.put("/api/cases/:id", requireStaffAuth, async (req, res) => {
+app.put("/api/cases/:id", requireCaseEditAccess, async (req, res) => {
   try {
     const { name, client_id, status, deadline, short_description } = req.body;
 
@@ -959,7 +1186,7 @@ app.put("/api/cases/:id", requireStaffAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/cases/:id", requireStaffAuth, async (req, res) => {
+app.delete("/api/cases/:id", requireCaseOwnerOrAdmin, async (req, res) => {
   try {
     const result = await pool.query("DELETE FROM cases WHERE id = $1 RETURNING id", [req.params.id]);
 
@@ -974,21 +1201,113 @@ app.delete("/api/cases/:id", requireStaffAuth, async (req, res) => {
   }
 });
 
-app.post("/api/cases", requireStaffAuth, async (req, res) => {
+app.post("/api/cases", requireRole(["admin", "lawyer"]), async (req, res) => {
   try {
     const { name, client_id, status, deadline, short_description } = req.body;
 
+    if (!name || !client_id) {
+      return res.status(400).json({ error: "name and client_id are required" });
+    }
+
     const result = await pool.query(
-      `INSERT INTO cases (name, client_id, status, deadline, short_description)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO cases (name, client_id, owner_id, status, deadline, short_description)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [name, client_id, status || "open", deadline || null, short_description || null]
+      [
+        name,
+        client_id,
+        req.auth.id,
+        status || "open",
+        deadline || null,
+        short_description || null
+      ]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error("Create case error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/cases/:id/assign", requireCaseOwnerOrAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.body.user_id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: "user_id must be a valid number" });
+    }
+
+    const userResult = await pool.query(
+      `
+      SELECT id, username, full_name, email, role, is_approved
+      FROM users
+      WHERE id = $1
+      `,
+      [userId]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const targetUser = buildAuthUser(userResult.rows[0]);
+    if (!targetUser.is_approved || !["admin", "lawyer", "assistant"].includes(targetUser.role)) {
+      return res.status(400).json({ error: "Only approved firm users can be assigned to cases" });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO case_assignments (case_id, user_id)
+      VALUES ($1, $2)
+      ON CONFLICT (case_id, user_id) DO NOTHING
+      RETURNING *
+      `,
+      [req.params.id, userId]
+    );
+
+    res.status(result.rows.length ? 201 : 200).json({
+      assignment: result.rows[0] || null,
+      user: targetUser
+    });
+  } catch (error) {
+    console.error("Assign case user error:", error);
+    res.status(500).json({ error: "Failed to assign user to case" });
+  }
+});
+
+app.get("/api/cases/:id/assignments", requireStaffAuth, async (req, res) => {
+  try {
+    if (!(await caseExists(req.params.id))) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        users.id,
+        users.username,
+        users.full_name,
+        users.email,
+        users.role,
+        users.is_approved,
+        case_assignments.created_at AS assigned_at
+      FROM case_assignments
+      JOIN users ON users.id = case_assignments.user_id
+      WHERE case_assignments.case_id = $1
+      ORDER BY users.full_name ASC, users.username ASC, users.id ASC
+      `,
+      [req.params.id]
+    );
+
+    res.json(
+      result.rows.map((row) => ({
+        ...buildAuthUser(row),
+        assigned_at: row.assigned_at
+      }))
+    );
+  } catch (error) {
+    console.error("Fetch case assignments error:", error);
+    res.status(500).json({ error: "Failed to fetch case assignments" });
   }
 });
 
@@ -1072,7 +1391,7 @@ app.post("/api/remote-access/setup", async (req, res) => {
         SELECT id
         FROM users
         WHERE LOWER(email) = $1
-          AND (role <> 'remote_user' OR client_id IS DISTINCT FROM $2)
+          AND (role <> 'client' OR client_id IS DISTINCT FROM $2)
       `,
       [email, invitation.client_id]
     );
@@ -1086,7 +1405,7 @@ app.post("/api/remote-access/setup", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const existingRemoteUser = await client.query(
-      "SELECT id FROM users WHERE role = 'remote_user' AND client_id = $1",
+      "SELECT id FROM users WHERE role = 'client' AND client_id = $1",
       [invitation.client_id]
     );
 
@@ -1095,8 +1414,11 @@ app.post("/api/remote-access/setup", async (req, res) => {
         `
           UPDATE users
           SET full_name = $1,
+              username = $1,
               email = $2,
-              password_hash = $3
+              password_hash = $3,
+              role = 'client',
+              is_approved = TRUE
           WHERE id = $4
         `,
         [invitation.full_name, email, passwordHash, existingRemoteUser.rows[0].id]
@@ -1104,10 +1426,10 @@ app.post("/api/remote-access/setup", async (req, res) => {
     } else {
       await client.query(
         `
-          INSERT INTO users (full_name, email, password_hash, role, client_id)
-          VALUES ($1, $2, $3, 'remote_user', $4)
+          INSERT INTO users (username, full_name, email, password_hash, role, is_approved, client_id)
+          VALUES ($1, $2, $3, $4, 'client', TRUE, $5)
         `,
-        [invitation.full_name, email, passwordHash, invitation.client_id]
+        [invitation.full_name, invitation.full_name, email, passwordHash, invitation.client_id]
       );
     }
 
@@ -1231,17 +1553,105 @@ app.get("/api/remote-user/timeline", requireRemoteUserAuth, async (req, res) => 
   }
 });
 
-app.post("/api/auth/signup", async (req, res) => {
+app.get("/api/admin/users/pending", requireRole(["admin"]), async (req, res) => {
   try {
-    const { full_name, email, password } = req.body;
+    const result = await pool.query(
+      `
+      SELECT id, username, full_name, email, role, is_approved, created_at
+      FROM users
+      WHERE is_approved = FALSE OR role = 'pending'
+      ORDER BY created_at ASC
+      `
+    );
 
-    if (!full_name || !email || !password) {
-      return res.status(400).json({ error: "Full name, email, and password are required." });
+    res.json(result.rows.map(buildAuthUser));
+  } catch (error) {
+    console.error("Fetch pending users error:", error);
+    res.status(500).json({ error: "Failed to fetch pending users" });
+  }
+});
+
+app.get("/api/admin/users", requireRole(["admin"]), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, username, full_name, email, role, is_approved, client_id, created_at
+      FROM users
+      ORDER BY created_at DESC, id DESC
+      `
+    );
+
+    res.json(result.rows.map(buildAuthUser));
+  } catch (error) {
+    console.error("Fetch users error:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+async function updateUserRole(req, res) {
+  try {
+    const nextRole = normalizeUserRole(String(req.body.role || "").trim().toLowerCase());
+    if (!["admin", "lawyer", "assistant", "client"].includes(nextRole)) {
+      return res.status(400).json({ error: "role must be admin, lawyer, assistant, or client" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET role = $1,
+          is_approved = TRUE
+      WHERE id = $2
+      RETURNING id, username, full_name, email, role, is_approved, client_id
+      `,
+      [nextRole, req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ user: buildAuthUser(result.rows[0]) });
+  } catch (error) {
+    console.error("Update user role error:", error);
+    res.status(500).json({ error: "Failed to update user role" });
+  }
+}
+
+app.put("/api/admin/users/:id/approve", requireRole(["admin"]), updateUserRole);
+app.put("/api/admin/users/:id/role", requireRole(["admin"]), updateUserRole);
+
+app.get("/api/users/assignable", requireStaffAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, username, full_name, email, role, is_approved, client_id
+      FROM users
+      WHERE is_approved = TRUE
+        AND role IN ('admin', 'lawyer', 'assistant')
+      ORDER BY full_name ASC, username ASC, id ASC
+      `
+    );
+
+    res.json(result.rows.map(buildAuthUser));
+  } catch (error) {
+    console.error("Fetch assignable users error:", error);
+    res.status(500).json({ error: "Failed to fetch assignable users" });
+  }
+});
+
+async function registerUser(req, res) {
+  try {
+    const username = String(req.body.username || req.body.full_name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: "Username, email, and password are required." });
     }
 
     const existingUser = await pool.query(
       "SELECT id FROM users WHERE LOWER(email) = $1",
-      [email.trim().toLowerCase()]
+      [email]
     );
 
     if (existingUser.rows.length) {
@@ -1249,29 +1659,27 @@ app.post("/api/auth/signup", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-
     const result = await pool.query(
       `
-        INSERT INTO users (full_name, email, password_hash, role)
-        VALUES ($1, $2, $3, 'staff')
-        RETURNING id, full_name, email, role
+      INSERT INTO users (username, full_name, email, password_hash, role, is_approved)
+      VALUES ($1, $2, $3, $4, 'pending', FALSE)
+      RETURNING id, username, full_name, email, role, is_approved, client_id
       `,
-      [full_name.trim(), email.trim().toLowerCase(), passwordHash]
+      [username, username, email, passwordHash]
     );
 
-    const user = result.rows[0];
-    const token = signAuthToken({
-      id: user.id,
-      email: user.email,
-      role: user.role
+    res.status(201).json({
+      user: buildAuthUser(result.rows[0]),
+      message: "Registration submitted. Waiting for Admin Approval."
     });
-
-    res.status(201).json({ user, token });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Signup failed." });
+    console.error("Registration error:", error);
+    res.status(500).json({ error: "Registration failed." });
   }
-});
+}
+
+app.post("/api/auth/register", registerUser);
+app.post("/api/auth/signup", registerUser);
 
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -1284,7 +1692,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     const result = await pool.query(
       `
-        SELECT id, full_name, email, password_hash, role, client_id
+        SELECT id, username, full_name, email, password_hash, role, is_approved, client_id
         FROM users
         WHERE LOWER(email) = $1
       `,
@@ -1302,21 +1710,21 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password." });
     }
 
+    const authUser = buildAuthUser(user);
+    if (!authUser.is_approved || authUser.role === "pending") {
+      return res.status(403).json({ error: "Waiting for Admin Approval" });
+    }
+
     const token = signAuthToken({
-      id: user.id,
-      email: user.email,
-      role: user.role || "staff",
-      client_id: user.client_id || null
+      id: authUser.id,
+      email: authUser.email,
+      role: authUser.role,
+      is_approved: authUser.is_approved,
+      client_id: authUser.client_id
     });
 
     res.json({
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        role: user.role || "staff",
-        client_id: user.client_id || null
-      },
+      user: authUser,
       token
     });
   } catch (error) {
@@ -1326,6 +1734,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 ensureRemoteAccessSchema()
+  .then(() => ensureBootstrapAdmin())
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Backend running on port ${PORT}`);

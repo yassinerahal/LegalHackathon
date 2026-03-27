@@ -16,6 +16,11 @@ const detailDocPlaceholderName = document.getElementById("detailDocPlaceholderNa
 const detailDocPlaceholderStatus = document.getElementById("detailDocPlaceholderStatus");
 const detailAddDocPlaceholderBtn = document.getElementById("detailAddDocPlaceholderBtn");
 const commentsList = document.getElementById("commentsList");
+const caseAssignmentsPanel = document.getElementById("caseAssignmentsPanel");
+const caseAssigneeSelect = document.getElementById("caseAssigneeSelect");
+const assignCaseUserBtn = document.getElementById("assignCaseUserBtn");
+const caseAssignmentsStatus = document.getElementById("caseAssignmentsStatus");
+const caseAssignmentsList = document.getElementById("caseAssignmentsList");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
@@ -29,6 +34,8 @@ const editCaseStatus = document.getElementById("editCaseStatus");
 const editCaseDeadline = document.getElementById("editCaseDeadline");
 const editCaseDescription = document.getElementById("editCaseDescription");
 const editCaseComment = document.getElementById("editCaseComment");
+const editCaseTeamSection = document.getElementById("editCaseTeamSection");
+const editCaseTeamList = document.getElementById("editCaseTeamList");
 const finishCaseBtn = document.getElementById("finishCaseBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const saveEditBtn = document.getElementById("saveEditBtn");
@@ -39,6 +46,9 @@ const ctxRemoveBtn = document.getElementById("ctxRemoveBtn");
 
 let currentCaseId = null;
 let contextMenuFile = null;
+let availableAssignees = [];
+let assignedUsers = [];
+let selectedEditAssigneeIds = new Set();
 
 function requireSession() {
   return requireStaffSession();
@@ -62,6 +72,11 @@ function renderLoggedInUser() {
   } catch (error) {
     loggedInUserName.textContent = "";
   }
+}
+
+function canManageCaseAssignments(session = getStoredSession(), entry = null) {
+  if (!session || !entry) return false;
+  return session.role === "admin" || Boolean(entry.is_owner);
 }
 
 function readCases() {
@@ -224,6 +239,94 @@ function normalizeUploadedDocuments(documents) {
   );
 }
 
+function renderCaseAssignments(entry) {
+  const canManageAssignments = canManageCaseAssignments(getStoredSession(), entry);
+  caseAssignmentsPanel.hidden = !canManageAssignments;
+  if (!canManageAssignments) {
+    return;
+  }
+
+  const eligibleUsers = availableAssignees.filter((user) => user.role === "lawyer" || user.role === "assistant");
+  const assignedIds = new Set(assignedUsers.map((user) => String(user.id)));
+
+  caseAssigneeSelect.innerHTML = "";
+  eligibleUsers
+    .filter((user) => !assignedIds.has(String(user.id)))
+    .forEach((user) => {
+      const option = document.createElement("option");
+      option.value = user.id;
+      option.textContent = `${user.full_name || user.username} (${user.role})`;
+      caseAssigneeSelect.appendChild(option);
+    });
+
+  assignCaseUserBtn.disabled = !caseAssigneeSelect.options.length;
+  caseAssignmentsList.innerHTML = "";
+
+  if (!assignedUsers.length) {
+    caseAssignmentsList.innerHTML = '<li><p class="field-note">No additional users assigned yet.</p></li>';
+    return;
+  }
+
+  assignedUsers.forEach((user) => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div>
+        <strong>${user.full_name || user.username}</strong>
+        <p class="meta">${user.email} • ${user.role}</p>
+      </div>
+    `;
+    caseAssignmentsList.appendChild(li);
+  });
+}
+
+function renderEditCaseTeamSelection(entry) {
+  if (!editCaseTeamSection || !editCaseTeamList) return;
+
+  const canManageAssignments = canManageCaseAssignments(getStoredSession(), entry);
+  editCaseTeamSection.classList.toggle("hidden", !canManageAssignments);
+  if (!canManageAssignments) {
+    editCaseTeamList.innerHTML = "";
+    return;
+  }
+
+  const fixedOwnerId = entry?.owner_id ? String(entry.owner_id) : "";
+  const fixedOwner = availableAssignees.find((user) => String(user.id) === fixedOwnerId);
+  const eligibleUsers = availableAssignees.filter(
+    (user) =>
+      (user.role === "lawyer" || user.role === "assistant") &&
+      String(user.id) !== fixedOwnerId
+  );
+
+  const fixedMarkup = fixedOwner
+    ? `
+      <div class="assignment-selection-item assignment-selection-item-fixed">
+        <input type="checkbox" checked disabled />
+        <span>${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
+      </div>
+    `
+    : "";
+
+  const selectableMarkup = eligibleUsers
+    .map(
+      (user) => `
+        <label class="assignment-selection-item">
+          <input
+            type="checkbox"
+            data-edit-case-assignee
+            value="${user.id}"
+            ${selectedEditAssigneeIds.has(String(user.id)) ? "checked" : ""}
+          />
+          <span>${user.full_name || user.username} (${user.role})</span>
+        </label>
+      `
+    )
+    .join("");
+
+  editCaseTeamList.innerHTML =
+    fixedMarkup +
+    (selectableMarkup || '<p class="field-note">No additional assistants or lawyers available.</p>');
+}
+
 async function saveUploadedFilesToCase(files) {
   if (!currentCaseId || !files.length) return;
   const cases = readCases();
@@ -269,6 +372,7 @@ async function saveUploadedFilesToCase(files) {
 
 function renderCaseDetails(entry) {
   currentCaseId = entry.id;
+  const canEditCurrentCase = canEditCase(getStoredSession(), entry);
   caseTitle.textContent = entry.title || "Case";
   caseMeta.textContent = `${entry.stage || "No description"} • ${(entry.clientNames || []).join(", ")}`;
   caseDescription.textContent = entry.stage || "No description added yet.";
@@ -310,14 +414,16 @@ function renderCaseDetails(entry) {
       name.className = "uploaded-file-name";
       name.textContent = file.name;
 
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "uploaded-file-remove";
-      removeBtn.dataset.removeFileName = file.name;
-      removeBtn.textContent = "x";
       card.appendChild(thumb);
       card.appendChild(name);
-      card.appendChild(removeBtn);
+      if (canEditCurrentCase) {
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "uploaded-file-remove";
+        removeBtn.dataset.removeFileName = file.name;
+        removeBtn.textContent = "x";
+        card.appendChild(removeBtn);
+      }
       uploadedDocumentsGrid.appendChild(card);
     });
   }
@@ -378,18 +484,30 @@ function renderCaseDetails(entry) {
         dropField.appendChild(dropHint);
       }
 
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "btn-ghost btn-small";
-      removeBtn.dataset.removeDocIndex = String(index);
-      removeBtn.textContent = "Remove";
-
       li.appendChild(label);
       li.appendChild(dropField);
-      li.appendChild(removeBtn);
+      if (canEditCurrentCase) {
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "btn-ghost btn-small";
+        removeBtn.dataset.removeDocIndex = String(index);
+        removeBtn.textContent = "Remove";
+        li.appendChild(removeBtn);
+      }
       requiredDocsList.appendChild(li);
     });
   }
+
+  detailDropZone.hidden = !canEditCurrentCase;
+  detailCaseDocuments.disabled = !canEditCurrentCase;
+  detailAddDocPlaceholderBtn.hidden = !canEditCurrentCase;
+  detailDocPlaceholderName.disabled = !canEditCurrentCase;
+  detailDocPlaceholderStatus.disabled = !canEditCurrentCase;
+  editCaseBtn.hidden = !canEditCurrentCase;
+  saveEditBtn.disabled = !canEditCurrentCase;
+  finishCaseBtn.hidden = !canEditCurrentCase;
+  deleteCaseBtn.hidden = !canEditCurrentCase;
+  renderCaseAssignments(entry);
 
   commentsList.innerHTML = "";
   const comments = entry.comments || [];
@@ -491,6 +609,36 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
   }
 }
 
+async function assignSelectedUserToCase() {
+  if (!currentCaseId || !caseAssigneeSelect.value) return;
+
+  try {
+    assignCaseUserBtn.disabled = true;
+    caseAssignmentsStatus.textContent = "Assigning user to this case...";
+    const userId = caseAssigneeSelect.value;
+    await assignUserToCase(currentCaseId, userId);
+
+    const [refreshedAssignments, refreshedUsers] = await Promise.all([
+      getCaseAssignments(currentCaseId),
+      getAssignableUsers()
+    ]);
+    assignedUsers = refreshedAssignments;
+    availableAssignees = refreshedUsers;
+
+    const currentEntry = readCases().find((item) => String(item.id) === String(currentCaseId));
+    if (currentEntry) {
+      renderCaseDetails(currentEntry);
+    }
+
+    caseAssignmentsStatus.textContent = "User assigned successfully.";
+  } catch (error) {
+    console.error("Failed to assign user to case:", error);
+    caseAssignmentsStatus.textContent = error.message || "Failed to assign user.";
+  } finally {
+    assignCaseUserBtn.disabled = false;
+  }
+}
+
 function openEditModal() {
   const entry = readCases().find((item) => String(item.id) === String(currentCaseId));
   if (!entry) return;
@@ -500,6 +648,8 @@ function openEditModal() {
   editCaseDeadline.value = entry.deadline || "";
   editCaseDescription.value = entry.stage || "";
   editCaseComment.value = "";
+  selectedEditAssigneeIds = new Set(assignedUsers.map((user) => String(user.id)));
+  renderEditCaseTeamSelection(entry);
   editCaseModal.showModal();
 }
 
@@ -760,10 +910,23 @@ requiredDocsList.addEventListener("click", (event) => {
 });
 
 detailAddDocPlaceholderBtn.addEventListener("click", addRequiredPlaceholder);
+assignCaseUserBtn.addEventListener("click", assignSelectedUserToCase);
 
 cancelEditBtn.addEventListener("click", () => {
   editCaseModal.close();
 });
+
+if (editCaseTeamList) {
+  editCaseTeamList.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-edit-case-assignee]");
+    if (!checkbox) return;
+    if (checkbox.checked) {
+      selectedEditAssigneeIds.add(String(checkbox.value));
+    } else {
+      selectedEditAssigneeIds.delete(String(checkbox.value));
+    }
+  });
+}
 
 saveEditBtn.addEventListener("click", async () => {
   if (!currentCaseId) return;
@@ -835,6 +998,13 @@ saveEditBtn.addEventListener("click", async () => {
       comments
     };
 
+    if (selectedEditAssigneeIds.size > 0) {
+      await Promise.all(
+        Array.from(selectedEditAssigneeIds).map((userId) => assignUserToCase(currentCaseId, userId))
+      );
+      assignedUsers = await getCaseAssignments(currentCaseId);
+    }
+
     writeCases(cases);
     editCaseModal.close();
     renderCaseDetails(cases[caseIndex]);
@@ -855,21 +1025,30 @@ async function initPage() {
   }
 
   try {
-    const [entry, documents, placeholders] = await Promise.all([
+    const [entry, documents, placeholders, caseAssignmentRows, assignableUsers] = await Promise.all([
       getCaseById(caseId),
       getCaseDocuments(caseId),
-      getCasePlaceholders(caseId)
+      getCasePlaceholders(caseId),
+      getCaseAssignments(caseId),
+      getAssignableUsers()
     ]);
+
+    assignedUsers = caseAssignmentRows;
+    availableAssignees = assignableUsers;
 
     const storedCase = readCases().find((item) => String(item.id) === String(caseId));
 
     const mergedCase = mergeCaseIntoLocal({
       id: entry.id,
       client_id: entry.client_id,
+      owner_id: entry.owner_id || null,
       title: entry.name,
       stage: entry.short_description || "No description",
       clientNames: entry.client_name ? [entry.client_name] : [],
       status: entry.status || "open",
+      can_edit: Boolean(entry.can_edit),
+      is_owner: Boolean(entry.is_owner),
+      is_assigned: Boolean(entry.is_assigned),
       deadline: entry.deadline || "",
       comments: storedCase?.comments || [],
       requiredDocuments: placeholders.map((placeholder) => ({

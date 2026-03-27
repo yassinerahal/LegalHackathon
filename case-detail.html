@@ -83,6 +83,18 @@
         <ul id="commentsList" class="list"></ul>
       </section>
 
+      <section id="caseAssignmentsPanel" class="panel hidden">
+        <div class="panel-head">
+          <h3>Case Team Access</h3>
+        </div>
+        <div class="assignment-toolbar">
+          <select id="caseAssigneeSelect"></select>
+          <button id="assignCaseUserBtn" type="button" class="btn-primary">Assign to Case</button>
+        </div>
+        <p id="caseAssignmentsStatus" class="field-note"></p>
+        <ul id="caseAssignmentsList" class="list"></ul>
+      </section>
+
       <div class="page-danger-zone">
         <button id="deleteCaseBtn" type="button" class="btn-danger">Delete Case</button>
       </div>
@@ -113,6 +125,12 @@
 
         <label for="editCaseComment">Add Comment</label>
         <textarea id="editCaseComment" rows="2" placeholder="Optional update comment"></textarea>
+
+        <section id="editCaseTeamSection" class="doc-placeholder-section hidden">
+          <h4>Case Team Access</h4>
+          <p class="field-note">Add assistants or lawyers who should be able to edit this case.</p>
+          <div id="editCaseTeamList" class="assignment-selection-list"></div>
+        </section>
 
         <div class="modal-actions">
           <button id="finishCaseBtn" type="button" class="btn-ghost">Finish Case</button>

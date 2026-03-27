@@ -22,8 +22,24 @@ function getSessionToken() {
   return getStoredSession()?.token || "";
 }
 
+function isFirmRole(role) {
+  return ["admin", "lawyer", "assistant"].includes(role);
+}
+
+function canCreateCases(session = getStoredSession()) {
+  return session?.role === "admin" || session?.role === "lawyer";
+}
+
+function canEditCase(session = getStoredSession(), entry = null) {
+  if (!session || !entry) return false;
+  if (session.role === "admin") return true;
+  if (session.role === "lawyer") return Boolean(entry.can_edit || entry.is_owner || entry.is_assigned);
+  if (session.role === "assistant") return Boolean(entry.can_edit || entry.is_assigned);
+  return false;
+}
+
 function getSessionHomePath(session = getStoredSession()) {
-  return session?.role === "remote_user" ? "remote-portal.html" : "index.html";
+  return session?.role === "client" ? "remote-portal.html" : "index.html";
 }
 
 function requireStaffSession() {
@@ -33,7 +49,13 @@ function requireStaffSession() {
     return null;
   }
 
-  if (session.role === "remote_user") {
+  if (!session.isApproved) {
+    clearStoredSession();
+    window.location.href = "login.html";
+    return null;
+  }
+
+  if (!isFirmRole(session.role)) {
     window.location.href = "remote-portal.html";
     return null;
   }
@@ -48,7 +70,13 @@ function requireRemoteUserSession() {
     return null;
   }
 
-  if (session.role !== "remote_user") {
+  if (!session.isApproved) {
+    clearStoredSession();
+    window.location.href = "login.html";
+    return null;
+  }
+
+  if (session.role !== "client") {
     window.location.href = "index.html";
     return null;
   }
@@ -177,7 +205,7 @@ async function getRemoteUserTimeline() {
 }
 
 async function signup(payload) {
-  return apiRequest("/auth/signup", {
+  return apiRequest("/auth/register", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -226,4 +254,41 @@ async function linkPlaceholderToDocument(caseId, placeholderId, payload) {
     method: "PUT",
     body: JSON.stringify(payload)
   });
+}
+
+async function getPendingUsers() {
+  return apiRequest("/admin/users/pending");
+}
+
+async function getAllUsers() {
+  return apiRequest("/admin/users");
+}
+
+async function approveUser(id, role) {
+  return apiRequest(`/admin/users/${encodeURIComponent(id)}/approve`, {
+    method: "PUT",
+    body: JSON.stringify({ role })
+  });
+}
+
+async function updateUserRole(id, role) {
+  return apiRequest(`/admin/users/${encodeURIComponent(id)}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role })
+  });
+}
+
+async function assignUserToCase(caseId, userId) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId })
+  });
+}
+
+async function getAssignableUsers() {
+  return apiRequest("/users/assignable");
+}
+
+async function getCaseAssignments(caseId) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/assignments`);
 }

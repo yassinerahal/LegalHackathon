@@ -487,6 +487,24 @@ body.dark-mode .case-row-clickable:hover {
   font-size: 0.92rem;
 }
 
+.admin-main-card-body {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  min-height: 170px;
+}
+
+.admin-main-count {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.admin-main-count strong {
+  font-size: 1.35rem;
+  color: var(--primary-dark);
+}
+
 .hero-case-action {
   display: grid;
   place-items: center;
@@ -646,6 +664,51 @@ textarea {
 
 .hidden {
   display: none;
+}
+
+.admin-pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.assignment-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.assignment-toolbar select {
+  min-width: 220px;
+}
+
+.assignment-selection-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.assignment-selection-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-strong) 86%, var(--bg) 14%);
+}
+
+.assignment-selection-item-fixed {
+  opacity: 0.92;
+  border-style: dashed;
 }
 
 .client-form {

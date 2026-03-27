@@ -17,9 +17,11 @@
       AUTH_SESSION_KEY,
       JSON.stringify({
         id: result.user.id,
-        name: result.user.full_name,
+        username: result.user.username || result.user.full_name || "",
+        name: result.user.full_name || result.user.username || "",
         email: result.user.email || "",
-        role: result.user.role || "staff",
+        role: result.user.role || "pending",
+        isApproved: Boolean(result.user.is_approved),
         clientId: result.user.client_id || null,
         token: result.token || ""
       })
@@ -59,11 +61,11 @@
 
     try {
       const result = await signup({ full_name, email, password });
-      persistSession(result);
-      setMessage("Account created. Redirecting...", true);
+      clearStoredSession();
+      setMessage(result.message || "Registration submitted. Waiting for Admin Approval.", true);
       window.setTimeout(() => {
-        window.location.href = getSessionHomePath(getStoredSession());
-      }, 500);
+        window.location.href = "login.html";
+      }, 900);
     } catch (error) {
       setMessage(error.message || "Signup failed.");
     }

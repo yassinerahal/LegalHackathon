@@ -1,9 +1,11 @@
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL DEFAULT 'staff',
+    role VARCHAR(50) NOT NULL DEFAULT 'pending',
+    is_approved BOOLEAN NOT NULL DEFAULT FALSE,
     client_id INTEGER UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,10 +40,19 @@ CREATE TABLE cases (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'open',
     deadline DATE,
     short_description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE case_assignments (
+    id SERIAL PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (case_id, user_id)
 );
 
 CREATE TABLE documents (
