@@ -8,7 +8,7 @@ const multer = require("multer");
 const { GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
 let QRCode = null;
-const pool = require("./db");
+const prisma = require("./prisma");
 require("dotenv").config();
 
 const app = express();
@@ -23,16 +23,22 @@ app.use(cors());
 app.use(express.json());
 
 async function caseExists(caseId) {
-  const result = await pool.query("SELECT id FROM cases WHERE id = $1", [caseId]);
-  return result.rows.length > 0;
+  const entry = await prisma.case.findUnique({
+    where: { id: Number(caseId) },
+    select: { id: true }
+  });
+  return Boolean(entry);
 }
 
 async function placeholderBelongsToCase(caseId, placeholderId) {
-  const result = await pool.query(
-    "SELECT id FROM case_placeholders WHERE id = $1 AND case_id = $2",
-    [placeholderId, caseId]
-  );
-  return result.rows.length > 0;
+  const entry = await prisma.casePlaceholder.findFirst({
+    where: {
+      id: Number(placeholderId),
+      case_id: Number(caseId)
+    },
+    select: { id: true }
+  });
+  return Boolean(entry);
 }
 
 // ---------------------------------------------------------
@@ -290,142 +296,45 @@ function buildAuthUser(user) {
   };
 }
 
+function formatDateOnly(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
 async function ensureRemoteAccessSchema() {
-  await pool.query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS username VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS role VARCHAR(50) NOT NULL DEFAULT 'pending',
-    ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS client_id INTEGER UNIQUE
-  `);
-
-  await pool.query(`
-    UPDATE users
-    SET username = COALESCE(NULLIF(username, ''), full_name)
-    WHERE username IS NULL OR username = ''
-  `);
-
-  await pool.query(`
-    UPDATE users
-    SET role = CASE
-      WHEN role = 'staff' THEN 'lawyer'
-      WHEN role = 'remote_user' THEN 'client'
-      ELSE role
-    END
-  `);
-
-  await pool.query(`
-    UPDATE users
-    SET is_approved = TRUE
-    WHERE role IN ('admin', 'lawyer', 'assistant', 'client')
-      AND is_approved = FALSE
-  `);
-
-  await pool.query(`
-    ALTER TABLE users
-    ALTER COLUMN username SET NOT NULL
-  `);
-
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'users_client_id_fkey'
-      ) THEN
-        ALTER TABLE users
-        ADD CONSTRAINT users_client_id_fkey
-        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE;
-      END IF;
-    END $$;
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS remote_access_tokens (
-      id SERIAL PRIMARY KEY,
-      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      token_hash VARCHAR(128) UNIQUE NOT NULL,
-      status VARCHAR(20) NOT NULL DEFAULT 'active',
-      expires_at TIMESTAMP NOT NULL,
-      used_at TIMESTAMP,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await pool.query(`
-    ALTER TABLE cases
-    ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS case_assignments (
-      id SERIAL PRIMARY KEY,
-      case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (case_id, user_id)
-    )
-  `);
-
-  // Older Postgres volumes may predate the document upload feature, so create
-  // these tables at startup as a safe forward migration.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS case_documents (
-      id SERIAL PRIMARY KEY,
-      case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
-      original_name VARCHAR(255) NOT NULL,
-      s3_key VARCHAR(500) UNIQUE NOT NULL,
-      mime_type VARCHAR(100),
-      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS case_placeholders (
-      id SERIAL PRIMARY KEY,
-      case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
-      name VARCHAR(255) NOT NULL,
-      status VARCHAR(50) DEFAULT 'Pending',
-      attached_files JSONB DEFAULT '[]'::jsonb,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  await prisma.$connect();
 }
 
 async function ensureBootstrapAdmin() {
-  const existingAdmin = await pool.query(
-    `
-    SELECT id
-    FROM users
-    WHERE role = 'admin'
-    LIMIT 1
-    `
-  );
+  const existingAdmin = await prisma.user.findFirst({
+    where: { role: "admin" },
+    select: { id: true }
+  });
 
-  if (existingAdmin.rows.length) {
+  if (existingAdmin) {
     return;
   }
 
   const passwordHash = await bcrypt.hash(BOOTSTRAP_ADMIN_PASSWORD, 10);
-  await pool.query(
-    `
-    INSERT INTO users (username, full_name, email, password_hash, role, is_approved)
-    VALUES ($1, $2, $3, $4, 'admin', TRUE)
-    ON CONFLICT (email) DO UPDATE
-    SET username = EXCLUDED.username,
-        full_name = EXCLUDED.full_name,
-        password_hash = EXCLUDED.password_hash,
-        role = 'admin',
-        is_approved = TRUE
-    `,
-    [
-      BOOTSTRAP_ADMIN_USERNAME,
-      BOOTSTRAP_ADMIN_USERNAME,
-      BOOTSTRAP_ADMIN_EMAIL,
-      passwordHash
-    ]
-  );
+  await prisma.user.upsert({
+    where: { email: BOOTSTRAP_ADMIN_EMAIL },
+    update: {
+      username: BOOTSTRAP_ADMIN_USERNAME,
+      full_name: BOOTSTRAP_ADMIN_USERNAME,
+      password_hash: passwordHash,
+      role: "admin",
+      is_approved: true
+    },
+    create: {
+      username: BOOTSTRAP_ADMIN_USERNAME,
+      full_name: BOOTSTRAP_ADMIN_USERNAME,
+      email: BOOTSTRAP_ADMIN_EMAIL,
+      password_hash: passwordHash,
+      role: "admin",
+      is_approved: true
+    }
+  });
 
   console.log(`Bootstrap admin ready: ${BOOTSTRAP_ADMIN_EMAIL}`);
 }
@@ -465,23 +374,27 @@ function requireRole(roles) {
 const requireStaffAuth = requireRole(["admin", "lawyer", "assistant"]);
 
 async function getCaseAccessRow(caseId, userId) {
-  const result = await pool.query(
-    `
-    SELECT
-      cases.id,
-      cases.owner_id,
-      EXISTS (
-        SELECT 1
-        FROM case_assignments
-        WHERE case_id = cases.id AND user_id = $2
-      ) AS is_assigned
-    FROM cases
-    WHERE cases.id = $1
-    `,
-    [caseId, userId]
-  );
+  const entry = await prisma.case.findUnique({
+    where: { id: Number(caseId) },
+    select: {
+      id: true,
+      owner_id: true,
+      case_assignments: {
+        where: { user_id: Number(userId) },
+        select: { id: true }
+      }
+    }
+  });
 
-  return result.rows[0] || null;
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    id: entry.id,
+    owner_id: entry.owner_id,
+    is_assigned: entry.case_assignments.length > 0
+  };
 }
 
 function requireCaseEditAccess(req, res, next) {
@@ -546,37 +459,36 @@ function requireRemoteUserAuth(req, res, next) {
 
 async function getActiveRemoteAccessInvite(token) {
   const tokenHash = hashSetupToken(token);
-  const result = await pool.query(
-    `
-      SELECT
-        remote_access_tokens.id,
-        remote_access_tokens.client_id,
-        remote_access_tokens.status,
-        remote_access_tokens.expires_at,
-        clients.full_name,
-        clients.email,
-        clients.address,
-        clients.phone,
-        clients.zip_code,
-        clients.city,
-        clients.state
-      FROM remote_access_tokens
-      JOIN clients ON clients.id = remote_access_tokens.client_id
-      WHERE remote_access_tokens.token_hash = $1
-        AND remote_access_tokens.status = 'active'
-        AND remote_access_tokens.expires_at > NOW()
-    `,
-    [tokenHash]
-  );
-
-  return result.rows[0] || null;
+  return prisma.remoteAccessToken.findFirst({
+    where: {
+      token_hash: tokenHash,
+      status: "active",
+      expires_at: { gt: new Date() }
+    },
+    include: { client: true }
+  }).then((entry) => {
+    if (!entry) return null;
+    return {
+      id: entry.id,
+      client_id: entry.client_id,
+      status: entry.status,
+      expires_at: entry.expires_at,
+      full_name: entry.client.full_name,
+      email: entry.client.email,
+      address: entry.client.address,
+      phone: entry.client.phone,
+      zip_code: entry.client.zip_code,
+      city: entry.client.city,
+      state: entry.client.state
+    };
+  });
 }
 
 // Health check
 app.get("/api/health", async (req, res) => {
   try {
-    const result = await pool.query("SELECT NOW()");
-    res.json({ ok: true, time: result.rows[0].now });
+    await prisma.$connect();
+    res.json({ ok: true, time: new Date().toISOString() });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Database connection failed" });
@@ -632,14 +544,33 @@ app.post("/api/cases/:id/documents", requireCaseEditAccess, async (req, res) => 
       return res.status(404).json({ error: "Case not found" });
     }
 
-    const result = await pool.query(
-      `INSERT INTO case_documents (case_id, original_name, s3_key, mime_type)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [caseId, original_name, s3_key, mime_type]
-    );
+    const createdVersion = await prisma.$transaction(async (tx) => {
+      const document = await tx.document.create({
+        data: {
+          case_id: Number(caseId),
+          name: original_name
+        }
+      });
 
-    res.status(201).json(result.rows[0]);
+      return tx.documentVersion.create({
+        data: {
+          document_id: document.id,
+          original_name,
+          s3_key,
+          mime_type: mime_type || null,
+          uploaded_by: req.auth.id
+        }
+      });
+    });
+
+    res.status(201).json({
+      id: createdVersion.id,
+      case_id: Number(caseId),
+      original_name: createdVersion.original_name,
+      s3_key: createdVersion.s3_key,
+      mime_type: createdVersion.mime_type,
+      uploaded_at: createdVersion.uploaded_at
+    });
   } catch (error) {
     console.error("Database insert error:", error);
     res.status(500).json({ error: "Failed to save document info to database" });
@@ -658,18 +589,30 @@ app.get("/api/cases/:id/documents", requireStaffAuth, async (req, res) => {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    // Return only the documents that are explicitly linked to this case.
-    const result = await pool.query(
-      `
-      SELECT id, case_id, original_name, s3_key, mime_type, uploaded_at
-      FROM case_documents
-      WHERE case_id = $1
-      ORDER BY uploaded_at DESC, id DESC
-      `,
-      [caseId]
-    );
+    const versions = await prisma.documentVersion.findMany({
+      where: {
+        document: {
+          case_id: Number(caseId)
+        }
+      },
+      include: {
+        document: {
+          select: { case_id: true }
+        }
+      },
+      orderBy: [{ uploaded_at: "desc" }, { id: "desc" }]
+    });
 
-    res.json(result.rows);
+    res.json(
+      versions.map((version) => ({
+        id: version.id,
+        case_id: version.document.case_id,
+        original_name: version.original_name,
+        s3_key: version.s3_key,
+        mime_type: version.mime_type,
+        uploaded_at: version.uploaded_at
+      }))
+    );
   } catch (error) {
     console.error("Fetch case documents error:", error);
     res.status(500).json({ error: "Failed to fetch case documents" });
@@ -684,17 +627,12 @@ app.get("/api/documents/:s3Key/download", requireStaffAuth, async (req, res) => 
     }
 
     const requestedName = typeof req.query.name === "string" ? req.query.name.trim() : "";
-    const documentResult = await pool.query(
-      `
-      SELECT original_name, mime_type
-      FROM case_documents
-      WHERE s3_key = $1
-      LIMIT 1
-      `,
-      [s3Key]
-    );
+    const documentVersion = await prisma.documentVersion.findUnique({
+      where: { s3_key: s3Key },
+      select: { original_name: true, mime_type: true }
+    });
 
-    if (!documentResult.rows.length) {
+    if (!documentVersion) {
       return res.status(404).json({ error: "Document not found" });
     }
 
@@ -706,12 +644,12 @@ app.get("/api/documents/:s3Key/download", requireStaffAuth, async (req, res) => 
       })
     );
 
-    const originalName = requestedName || documentResult.rows[0].original_name || s3Key;
+    const originalName = requestedName || documentVersion.original_name || s3Key;
     const safeFileName = path.basename(originalName).replace(/"/g, "");
 
     res.setHeader(
       "Content-Type",
-      objectResponse.ContentType || documentResult.rows[0].mime_type || "application/octet-stream"
+      objectResponse.ContentType || documentVersion.mime_type || "application/octet-stream"
     );
     res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
 
@@ -758,34 +696,24 @@ app.post("/api/cases/:id/placeholders", requireCaseEditAccess, async (req, res) 
       return res.status(400).json({ error: "At least one placeholder is required" });
     }
 
-    const values = [];
-    const params = [];
-
-    placeholders.forEach((placeholder, index) => {
-      const offset = index * 4;
-      params.push(
-        caseId,
-        String(placeholder.name || "").trim(),
-        String(placeholder.status || "Pending"),
-        JSON.stringify(Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [])
-      );
-      values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
-    });
-
-    if (params.some((value, index) => index % 4 === 1 && !value)) {
+    if (placeholders.some((placeholder) => !String(placeholder.name || "").trim())) {
       return res.status(400).json({ error: "Each placeholder requires a name" });
     }
 
-    const result = await pool.query(
-      `
-      INSERT INTO case_placeholders (case_id, name, status, attached_files)
-      VALUES ${values.join(", ")}
-      RETURNING *
-      `,
-      params
+    const created = await prisma.$transaction(
+      placeholders.map((placeholder) =>
+        prisma.casePlaceholder.create({
+          data: {
+            case_id: Number(caseId),
+            name: String(placeholder.name || "").trim(),
+            status: String(placeholder.status || "Pending"),
+            attached_files: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
+          }
+        })
+      )
     );
 
-    res.status(201).json(result.rows);
+    res.status(201).json(created);
   } catch (error) {
     console.error("Create placeholders error:", error);
     res.status(500).json({ error: "Failed to create placeholders" });
@@ -804,17 +732,12 @@ app.get("/api/cases/:id/placeholders", requireStaffAuth, async (req, res) => {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    const result = await pool.query(
-      `
-      SELECT id, case_id, name, status, attached_files, created_at
-      FROM case_placeholders
-      WHERE case_id = $1
-      ORDER BY created_at ASC, id ASC
-      `,
-      [caseId]
-    );
+    const placeholders = await prisma.casePlaceholder.findMany({
+      where: { case_id: Number(caseId) },
+      orderBy: [{ created_at: "asc" }, { id: "asc" }]
+    });
 
-    res.json(result.rows);
+    res.json(placeholders);
   } catch (error) {
     console.error("Fetch placeholders error:", error);
     res.status(500).json({ error: "Failed to fetch placeholders" });
@@ -843,35 +766,47 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
       return res.status(404).json({ error: "Placeholder not found for this case" });
     }
 
-    const documentResult = await pool.query(
-      "SELECT id FROM case_documents WHERE case_id = $1 AND s3_key = $2",
-      [caseId, s3_key]
-    );
+    const documentVersion = await prisma.documentVersion.findFirst({
+      where: {
+        s3_key,
+        document: {
+          case_id: Number(caseId)
+        }
+      },
+      select: { id: true }
+    });
 
-    if (!documentResult.rows.length) {
+    if (!documentVersion) {
       return res.status(404).json({ error: "Document not found for this case" });
     }
 
-    const attachedFile = JSON.stringify([
-      {
-        original_name,
-        s3_key,
-        mime_type: mime_type || null
+    const placeholder = await prisma.casePlaceholder.findFirst({
+      where: {
+        id: Number(placeholderId),
+        case_id: Number(caseId)
       }
-    ]);
+    });
 
-    const result = await pool.query(
-      `
-      UPDATE case_placeholders
-      SET status = 'Uploaded',
-          attached_files = COALESCE(attached_files, '[]'::jsonb) || $1::jsonb
-      WHERE id = $2 AND case_id = $3
-      RETURNING *
-      `,
-      [attachedFile, placeholderId, caseId]
-    );
+    if (!placeholder) {
+      return res.status(404).json({ error: "Placeholder not found for this case" });
+    }
 
-    res.json(result.rows[0]);
+    const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
+    attachedFiles.push({
+      original_name,
+      s3_key,
+      mime_type: mime_type || null
+    });
+
+    const updatedPlaceholder = await prisma.casePlaceholder.update({
+      where: { id: Number(placeholderId) },
+      data: {
+        status: "Uploaded",
+        attached_files: attachedFiles
+      }
+    });
+
+    res.json(updatedPlaceholder);
   } catch (error) {
     console.error("Link placeholder error:", error);
     res.status(500).json({ error: "Failed to link placeholder" });
@@ -880,8 +815,10 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
 
 app.get("/api/clients", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM clients ORDER BY created_at DESC");
-    res.json(result.rows);
+    const clients = await prisma.client.findMany({
+      orderBy: { created_at: "desc" }
+    });
+    res.json(clients);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch clients" });
@@ -890,13 +827,15 @@ app.get("/api/clients", requireStaffAuth, async (req, res) => {
 
 app.get("/api/clients/:id", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM clients WHERE id = $1", [req.params.id]);
+    const client = await prisma.client.findUnique({
+      where: { id: Number(req.params.id) }
+    });
 
-    if (!result.rows.length) {
+    if (!client) {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    res.json(result.rows[0]);
+    res.json(client);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch client" });
@@ -907,25 +846,16 @@ app.put("/api/clients/:id", requireStaffAuth, async (req, res) => {
   try {
     const { full_name, email, phone, address, zip_code, city, state } = req.body;
 
-    const result = await pool.query(
-      `UPDATE clients
-       SET full_name = $1,
-           email = $2,
-           phone = $3,
-           address = $4,
-           zip_code = $5,
-           city = $6,
-           state = $7
-       WHERE id = $8
-       RETURNING *`,
-      [full_name, email, phone, address, zip_code, city, state, req.params.id]
-    );
+    const client = await prisma.client.update({
+      where: { id: Number(req.params.id) },
+      data: { full_name, email, phone, address, zip_code, city, state }
+    }).catch(() => null);
 
-    if (!result.rows.length) {
+    if (!client) {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    res.json(result.rows[0]);
+    res.json(client);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update client" });
@@ -933,84 +863,72 @@ app.put("/api/clients/:id", requireStaffAuth, async (req, res) => {
 });
 
 app.delete("/api/clients/:id", requireStaffAuth, async (req, res) => {
-  const client = await pool.connect();
-
   try {
-    await client.query("BEGIN");
-    await client.query("DELETE FROM cases WHERE client_id = $1", [req.params.id]);
-    const result = await client.query("DELETE FROM clients WHERE id = $1 RETURNING id", [req.params.id]);
+    const deleted = await prisma.client.delete({
+      where: { id: Number(req.params.id) }
+    }).catch(() => null);
 
-    if (!result.rows.length) {
-      await client.query("ROLLBACK");
+    if (!deleted) {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (error) {
-    await client.query("ROLLBACK");
     console.error(error);
     res.status(500).json({ error: error.message || "Failed to delete client" });
-  } finally {
-    client.release();
   }
 });
 
 app.post("/api/clients/:id/remote-access", requireStaffAuth, async (req, res) => {
   try {
-    const clientResult = await pool.query(
-      "SELECT id, full_name, email FROM clients WHERE id = $1",
-      [req.params.id]
-    );
+    const client = await prisma.client.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, full_name: true, email: true }
+    });
 
-    if (!clientResult.rows.length) {
+    if (!client) {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    const client = clientResult.rows[0];
     if (!client.email) {
       return res.status(400).json({
         error: "Remote access can only be granted to clients with an email address."
       });
     }
 
-    const conflictingAccount = await pool.query(
-      `
-        SELECT id
-        FROM users
-        WHERE LOWER(email) = $1
-          AND (role <> 'client' OR client_id IS DISTINCT FROM $2)
-      `,
-      [client.email.trim().toLowerCase(), client.id]
-    );
+    const conflictingAccount = await prisma.user.findFirst({
+      where: {
+        email: { equals: client.email.trim().toLowerCase(), mode: "insensitive" },
+        NOT: {
+          AND: [{ role: "client" }, { client_id: client.id }]
+        }
+      },
+      select: { id: true }
+    });
 
-    if (conflictingAccount.rows.length) {
+    if (conflictingAccount) {
       return res.status(409).json({
         error: "That email address is already used by another account."
       });
     }
 
-    await pool.query(
-      `
-        UPDATE remote_access_tokens
-        SET status = 'expired'
-        WHERE client_id = $1
-          AND status = 'active'
-      `,
-      [client.id]
-    );
+    await prisma.remoteAccessToken.updateMany({
+      where: { client_id: client.id, status: "active" },
+      data: { status: "expired" }
+    });
 
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashSetupToken(rawToken);
 
-    const tokenResult = await pool.query(
-      `
-        INSERT INTO remote_access_tokens (client_id, token_hash, status, expires_at)
-        VALUES ($1, $2, 'active', NOW() + ($3 || ' hours')::interval)
-        RETURNING expires_at
-      `,
-      [client.id, tokenHash, String(REMOTE_ACCESS_EXPIRY_HOURS)]
-    );
+    const expiresAt = new Date(Date.now() + REMOTE_ACCESS_EXPIRY_HOURS * 60 * 60 * 1000);
+    const tokenResult = await prisma.remoteAccessToken.create({
+      data: {
+        client_id: client.id,
+        token_hash: tokenHash,
+        status: "active",
+        expires_at: expiresAt
+      }
+    });
 
     const setupLink = buildSetupLink(req, rawToken);
     const qrCodeDataUrl = await buildQrCodeDataUrl(setupLink);
@@ -1018,7 +936,7 @@ app.post("/api/clients/:id/remote-access", requireStaffAuth, async (req, res) =>
     res.json({
       setup_link: setupLink,
       qr_code_data_url: qrCodeDataUrl,
-      expires_at: tokenResult.rows[0].expires_at,
+      expires_at: tokenResult.expires_at,
       client: {
         id: client.id,
         full_name: client.full_name,
@@ -1033,15 +951,12 @@ app.post("/api/clients/:id/remote-access", requireStaffAuth, async (req, res) =>
 
 app.get("/api/clients/:id/cases", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT *
-       FROM cases
-       WHERE client_id = $1
-       ORDER BY created_at DESC`,
-      [req.params.id]
-    );
+    const cases = await prisma.case.findMany({
+      where: { client_id: Number(req.params.id) },
+      orderBy: { created_at: "desc" }
+    });
 
-    res.json(result.rows);
+    res.json(cases.map((entry) => ({ ...entry, deadline: formatDateOnly(entry.deadline) })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch client cases" });
@@ -1052,14 +967,11 @@ app.post("/api/clients", requireStaffAuth, async (req, res) => {
   try {
     const { full_name, email, phone, address, zip_code, city, state } = req.body;
 
-    const result = await pool.query(
-      `INSERT INTO clients (full_name, email, phone, address, zip_code, city, state)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [full_name, email, phone, address, zip_code, city, state]
-    );
+    const client = await prisma.client.create({
+      data: { full_name, email, phone, address, zip_code, city, state }
+    });
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(client);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to create client" });
@@ -1068,38 +980,41 @@ app.post("/api/clients", requireStaffAuth, async (req, res) => {
 
 app.get("/api/cases", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT
-        cases.*,
-        clients.full_name AS client_name,
-        owner.username AS owner_username,
-        owner.full_name AS owner_full_name,
-        EXISTS (
-          SELECT 1
-          FROM case_assignments
-          WHERE case_assignments.case_id = cases.id
-            AND case_assignments.user_id = $1
-        ) AS is_assigned
-      FROM cases
-      JOIN clients ON cases.client_id = clients.id
-      LEFT JOIN users AS owner ON owner.id = cases.owner_id
-      ORDER BY cases.created_at DESC
-      `,
-      [req.auth.id]
-    );
+    const cases = await prisma.case.findMany({
+      include: {
+        client: { select: { full_name: true } },
+        owner: { select: { username: true, full_name: true } },
+        case_assignments: {
+          where: { user_id: Number(req.auth.id) },
+          select: { id: true }
+        },
+        documents: { select: { id: true } },
+        case_placeholders: { select: { id: true } }
+      },
+      orderBy: { created_at: "desc" }
+    });
 
     res.json(
-      result.rows.map((entry) => {
+      cases.map((entry) => {
         const isOwner = String(entry.owner_id || "") === String(req.auth.id);
-        const isAssigned = Boolean(entry.is_assigned);
+        const isAssigned = entry.case_assignments.length > 0;
         const canEdit =
           req.auth.role === "admin" ||
           (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
           (req.auth.role === "assistant" && isAssigned);
 
         return {
-          ...entry,
+          id: entry.id,
+          name: entry.name,
+          client_id: entry.client_id,
+          owner_id: entry.owner_id,
+          status: entry.status,
+          deadline: formatDateOnly(entry.deadline),
+          short_description: entry.short_description,
+          created_at: entry.created_at,
+          client_name: entry.client?.full_name || "",
+          owner_username: entry.owner?.username || "",
+          owner_full_name: entry.owner?.full_name || "",
           is_owner: isOwner,
           is_assigned: isAssigned,
           can_edit: canEdit
@@ -1114,41 +1029,43 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
 
 app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT
-        cases.*,
-        clients.full_name AS client_name,
-        owner.username AS owner_username,
-        owner.full_name AS owner_full_name,
-        EXISTS (
-          SELECT 1
-          FROM case_assignments
-          WHERE case_assignments.case_id = cases.id
-            AND case_assignments.user_id = $2
-        ) AS is_assigned
-      FROM cases
-      JOIN clients ON cases.client_id = clients.id
-      LEFT JOIN users AS owner ON owner.id = cases.owner_id
-      WHERE cases.id = $1
-      `,
-      [req.params.id, req.auth.id]
-    );
+    const entry = await prisma.case.findUnique({
+      where: { id: Number(req.params.id) },
+      include: {
+        client: { select: { full_name: true } },
+        owner: { select: { username: true, full_name: true } },
+        case_assignments: {
+          where: { user_id: Number(req.auth.id) },
+          select: { id: true }
+        },
+        documents: { include: { document_versions: true } },
+        case_placeholders: true
+      }
+    });
 
-    if (!result.rows.length) {
+    if (!entry) {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    const entry = result.rows[0];
     const isOwner = String(entry.owner_id || "") === String(req.auth.id);
-    const isAssigned = Boolean(entry.is_assigned);
+    const isAssigned = entry.case_assignments.length > 0;
     const canEdit =
       req.auth.role === "admin" ||
       (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
       (req.auth.role === "assistant" && isAssigned);
 
     res.json({
-      ...entry,
+      id: entry.id,
+      name: entry.name,
+      client_id: entry.client_id,
+      owner_id: entry.owner_id,
+      status: entry.status,
+      deadline: formatDateOnly(entry.deadline),
+      short_description: entry.short_description,
+      created_at: entry.created_at,
+      client_name: entry.client?.full_name || "",
+      owner_username: entry.owner?.username || "",
+      owner_full_name: entry.owner?.full_name || "",
       is_owner: isOwner,
       is_assigned: isAssigned,
       can_edit: canEdit
@@ -1163,23 +1080,25 @@ app.put("/api/cases/:id", requireCaseEditAccess, async (req, res) => {
   try {
     const { name, client_id, status, deadline, short_description } = req.body;
 
-    const result = await pool.query(
-      `UPDATE cases
-       SET name = $1,
-           client_id = $2,
-           status = $3,
-           deadline = $4,
-           short_description = $5
-       WHERE id = $6
-       RETURNING *`,
-      [name, client_id, status || "open", deadline || null, short_description || null, req.params.id]
-    );
+    const updatedCase = await prisma.case.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        name,
+        client_id: Number(client_id),
+        status: status || "open",
+        deadline: deadline ? new Date(deadline) : null,
+        short_description: short_description || null
+      }
+    }).catch(() => null);
 
-    if (!result.rows.length) {
+    if (!updatedCase) {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    res.json(result.rows[0]);
+    res.json({
+      ...updatedCase,
+      deadline: formatDateOnly(updatedCase.deadline)
+    });
   } catch (error) {
     console.error("Update case error:", error);
     res.status(500).json({ error: error.message || "Failed to update case" });
@@ -1188,9 +1107,11 @@ app.put("/api/cases/:id", requireCaseEditAccess, async (req, res) => {
 
 app.delete("/api/cases/:id", requireCaseOwnerOrAdmin, async (req, res) => {
   try {
-    const result = await pool.query("DELETE FROM cases WHERE id = $1 RETURNING id", [req.params.id]);
+    const deleted = await prisma.case.delete({
+      where: { id: Number(req.params.id) }
+    }).catch(() => null);
 
-    if (!result.rows.length) {
+    if (!deleted) {
       return res.status(404).json({ error: "Case not found" });
     }
 
@@ -1209,21 +1130,21 @@ app.post("/api/cases", requireRole(["admin", "lawyer"]), async (req, res) => {
       return res.status(400).json({ error: "name and client_id are required" });
     }
 
-    const result = await pool.query(
-      `INSERT INTO cases (name, client_id, owner_id, status, deadline, short_description)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
+    const createdCase = await prisma.case.create({
+      data: {
         name,
-        client_id,
-        req.auth.id,
-        status || "open",
-        deadline || null,
-        short_description || null
-      ]
-    );
+        client_id: Number(client_id),
+        owner_id: req.auth.id,
+        status: status || "open",
+        deadline: deadline ? new Date(deadline) : null,
+        short_description: short_description || null
+      }
+    });
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({
+      ...createdCase,
+      deadline: formatDateOnly(createdCase.deadline)
+    });
   } catch (error) {
     console.error("Create case error:", error);
     res.status(500).json({ error: error.message });
@@ -1237,36 +1158,35 @@ app.post("/api/cases/:id/assign", requireCaseOwnerOrAdmin, async (req, res) => {
       return res.status(400).json({ error: "user_id must be a valid number" });
     }
 
-    const userResult = await pool.query(
-      `
-      SELECT id, username, full_name, email, role, is_approved
-      FROM users
-      WHERE id = $1
-      `,
-      [userId]
-    );
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
 
-    if (!userResult.rows.length) {
+    if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const targetUser = buildAuthUser(userResult.rows[0]);
+    const targetUser = buildAuthUser(user);
     if (!targetUser.is_approved || !["admin", "lawyer", "assistant"].includes(targetUser.role)) {
       return res.status(400).json({ error: "Only approved firm users can be assigned to cases" });
     }
 
-    const result = await pool.query(
-      `
-      INSERT INTO case_assignments (case_id, user_id)
-      VALUES ($1, $2)
-      ON CONFLICT (case_id, user_id) DO NOTHING
-      RETURNING *
-      `,
-      [req.params.id, userId]
-    );
+    const assignment = await prisma.caseAssignment.upsert({
+      where: {
+        case_id_user_id: {
+          case_id: Number(req.params.id),
+          user_id: userId
+        }
+      },
+      update: {},
+      create: {
+        case_id: Number(req.params.id),
+        user_id: userId
+      }
+    });
 
-    res.status(result.rows.length ? 201 : 200).json({
-      assignment: result.rows[0] || null,
+    res.status(201).json({
+      assignment,
       user: targetUser
     });
   } catch (error) {
@@ -1281,28 +1201,16 @@ app.get("/api/cases/:id/assignments", requireStaffAuth, async (req, res) => {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    const result = await pool.query(
-      `
-      SELECT
-        users.id,
-        users.username,
-        users.full_name,
-        users.email,
-        users.role,
-        users.is_approved,
-        case_assignments.created_at AS assigned_at
-      FROM case_assignments
-      JOIN users ON users.id = case_assignments.user_id
-      WHERE case_assignments.case_id = $1
-      ORDER BY users.full_name ASC, users.username ASC, users.id ASC
-      `,
-      [req.params.id]
-    );
+    const assignments = await prisma.caseAssignment.findMany({
+      where: { case_id: Number(req.params.id) },
+      include: { user: true },
+      orderBy: [{ user: { full_name: "asc" } }, { user: { username: "asc" } }, { id: "asc" }]
+    });
 
     res.json(
-      result.rows.map((row) => ({
-        ...buildAuthUser(row),
-        assigned_at: row.assigned_at
+      assignments.map((row) => ({
+        ...buildAuthUser(row.user),
+        assigned_at: row.created_at
       }))
     );
   } catch (error) {
@@ -1339,8 +1247,6 @@ app.get("/api/remote-access/setup", async (req, res) => {
 });
 
 app.post("/api/remote-access/setup", async (req, res) => {
-  const client = await pool.connect();
-
   try {
     const { token, password } = req.body;
 
@@ -1352,136 +1258,125 @@ app.post("/api/remote-access/setup", async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 8 characters." });
     }
 
-    await client.query("BEGIN");
+    const invitation = await prisma.remoteAccessToken.findFirst({
+      where: {
+        token_hash: hashSetupToken(token),
+        status: "active",
+        expires_at: { gt: new Date() }
+      },
+      include: { client: true }
+    });
 
-    const invitationResult = await client.query(
-      `
-        SELECT
-          remote_access_tokens.id,
-          remote_access_tokens.client_id,
-          clients.full_name,
-          clients.email
-        FROM remote_access_tokens
-        JOIN clients ON clients.id = remote_access_tokens.client_id
-        WHERE remote_access_tokens.token_hash = $1
-          AND remote_access_tokens.status = 'active'
-          AND remote_access_tokens.expires_at > NOW()
-        FOR UPDATE
-      `,
-      [hashSetupToken(token)]
-    );
-
-    if (!invitationResult.rows.length) {
-      await client.query("ROLLBACK");
+    if (!invitation) {
       return res.status(400).json({
         error: "This remote access link is invalid, expired, or already used."
       });
     }
 
-    const invitation = invitationResult.rows[0];
-    const email = invitation.email?.trim().toLowerCase();
+    const email = invitation.client.email?.trim().toLowerCase();
 
     if (!email) {
-      await client.query("ROLLBACK");
       return res.status(400).json({ error: "The linked client record is missing an email address." });
     }
 
-    const conflictingUser = await client.query(
-      `
-        SELECT id
-        FROM users
-        WHERE LOWER(email) = $1
-          AND (role <> 'client' OR client_id IS DISTINCT FROM $2)
-      `,
-      [email, invitation.client_id]
-    );
+    const conflictingUser = await prisma.user.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        NOT: {
+          AND: [{ role: "client" }, { client_id: invitation.client_id }]
+        }
+      },
+      select: { id: true }
+    });
 
-    if (conflictingUser.rows.length) {
-      await client.query("ROLLBACK");
+    if (conflictingUser) {
       return res.status(409).json({
         error: "That email address is already associated with another account."
       });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const existingRemoteUser = await client.query(
-      "SELECT id FROM users WHERE role = 'client' AND client_id = $1",
-      [invitation.client_id]
-    );
+    const existingRemoteUser = await prisma.user.findFirst({
+      where: {
+        role: "client",
+        client_id: invitation.client_id
+      },
+      select: { id: true }
+    });
 
-    if (existingRemoteUser.rows.length) {
-      await client.query(
-        `
-          UPDATE users
-          SET full_name = $1,
-              username = $1,
-              email = $2,
-              password_hash = $3,
-              role = 'client',
-              is_approved = TRUE
-          WHERE id = $4
-        `,
-        [invitation.full_name, email, passwordHash, existingRemoteUser.rows[0].id]
-      );
-    } else {
-      await client.query(
-        `
-          INSERT INTO users (username, full_name, email, password_hash, role, is_approved, client_id)
-          VALUES ($1, $2, $3, $4, 'client', TRUE, $5)
-        `,
-        [invitation.full_name, invitation.full_name, email, passwordHash, invitation.client_id]
-      );
-    }
+    await prisma.$transaction(async (tx) => {
+      if (existingRemoteUser) {
+        await tx.user.update({
+          where: { id: existingRemoteUser.id },
+          data: {
+            full_name: invitation.client.full_name,
+            username: invitation.client.full_name,
+            email,
+            password_hash: passwordHash,
+            role: "client",
+            is_approved: true
+          }
+        });
+      } else {
+        await tx.user.create({
+          data: {
+            username: invitation.client.full_name,
+            full_name: invitation.client.full_name,
+            email,
+            password_hash: passwordHash,
+            role: "client",
+            is_approved: true,
+            client_id: invitation.client_id
+          }
+        });
+      }
 
-    await client.query(
-      `
-        UPDATE remote_access_tokens
-        SET status = 'used',
-            used_at = NOW()
-        WHERE id = $1
-      `,
-      [invitation.id]
-    );
+      await tx.remoteAccessToken.update({
+        where: { id: invitation.id },
+        data: {
+          status: "used",
+          used_at: new Date()
+        }
+      });
 
-    await client.query(
-      `
-        UPDATE remote_access_tokens
-        SET status = 'expired'
-        WHERE client_id = $1
-          AND status = 'active'
-          AND id <> $2
-      `,
-      [invitation.client_id, invitation.id]
-    );
+      await tx.remoteAccessToken.updateMany({
+        where: {
+          client_id: invitation.client_id,
+          status: "active",
+          NOT: { id: invitation.id }
+        },
+        data: { status: "expired" }
+      });
+    });
 
-    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (error) {
-    await client.query("ROLLBACK");
     console.error(error);
     res.status(500).json({ error: "Failed to complete remote access setup" });
-  } finally {
-    client.release();
   }
 });
 
 app.get("/api/remote-user/profile", requireRemoteUserAuth, async (req, res) => {
   try {
-    // Backend scoping: remote users never choose a client id. The token decides it.
-    const result = await pool.query(
-      `
-        SELECT id, full_name, email, phone, address, zip_code, city, state
-        FROM clients
-        WHERE id = $1
-      `,
-      [req.auth.client_id]
-    );
+    const client = await prisma.client.findUnique({
+      where: { id: Number(req.auth.client_id) },
+      select: {
+        id: true,
+        full_name: true,
+        email: true,
+        phone: true,
+        address: true,
+        zip_code: true,
+        city: true,
+        state: true
+      }
+    });
 
-    if (!result.rows.length) {
+    if (!client) {
       return res.status(404).json({ error: "Profile not found" });
     }
 
-    res.json(result.rows[0]);
+    res.json(client);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch remote user profile" });
@@ -1490,17 +1385,20 @@ app.get("/api/remote-user/profile", requireRemoteUserAuth, async (req, res) => {
 
 app.get("/api/remote-user/cases", requireRemoteUserAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-        SELECT id, name, status, deadline, short_description, created_at
-        FROM cases
-        WHERE client_id = $1
-        ORDER BY created_at DESC
-      `,
-      [req.auth.client_id]
-    );
+    const cases = await prisma.case.findMany({
+      where: { client_id: Number(req.auth.client_id) },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        deadline: true,
+        short_description: true,
+        created_at: true
+      },
+      orderBy: { created_at: "desc" }
+    });
 
-    res.json(result.rows);
+    res.json(cases.map((entry) => ({ ...entry, deadline: formatDateOnly(entry.deadline) })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch remote user cases" });
@@ -1509,17 +1407,19 @@ app.get("/api/remote-user/cases", requireRemoteUserAuth, async (req, res) => {
 
 app.get("/api/remote-user/timeline", requireRemoteUserAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-        SELECT id, name, deadline, short_description, created_at
-        FROM cases
-        WHERE client_id = $1
-        ORDER BY created_at DESC
-      `,
-      [req.auth.client_id]
-    );
+    const cases = await prisma.case.findMany({
+      where: { client_id: Number(req.auth.client_id) },
+      select: {
+        id: true,
+        name: true,
+        deadline: true,
+        short_description: true,
+        created_at: true
+      },
+      orderBy: { created_at: "desc" }
+    });
 
-    const events = result.rows.flatMap((entry) => {
+    const events = cases.flatMap((entry) => {
       const timeline = [
         {
           case_id: entry.id,
@@ -1532,12 +1432,13 @@ app.get("/api/remote-user/timeline", requireRemoteUserAuth, async (req, res) => 
       ];
 
       if (entry.deadline) {
+        const deadlineValue = formatDateOnly(entry.deadline);
         timeline.push({
           case_id: entry.id,
           case_name: entry.name,
           title: "Deadline scheduled",
-          description: `Deadline set for ${entry.deadline}`,
-          occurred_at: `${entry.deadline}T00:00:00`,
+          description: `Deadline set for ${deadlineValue}`,
+          occurred_at: `${deadlineValue}T00:00:00`,
           kind: "deadline"
         });
       }
@@ -1555,16 +1456,14 @@ app.get("/api/remote-user/timeline", requireRemoteUserAuth, async (req, res) => 
 
 app.get("/api/admin/users/pending", requireRole(["admin"]), async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT id, username, full_name, email, role, is_approved, created_at
-      FROM users
-      WHERE is_approved = FALSE OR role = 'pending'
-      ORDER BY created_at ASC
-      `
-    );
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [{ is_approved: false }, { role: "pending" }]
+      },
+      orderBy: { created_at: "asc" }
+    });
 
-    res.json(result.rows.map(buildAuthUser));
+    res.json(users.map(buildAuthUser));
   } catch (error) {
     console.error("Fetch pending users error:", error);
     res.status(500).json({ error: "Failed to fetch pending users" });
@@ -1573,15 +1472,11 @@ app.get("/api/admin/users/pending", requireRole(["admin"]), async (req, res) => 
 
 app.get("/api/admin/users", requireRole(["admin"]), async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT id, username, full_name, email, role, is_approved, client_id, created_at
-      FROM users
-      ORDER BY created_at DESC, id DESC
-      `
-    );
+    const users = await prisma.user.findMany({
+      orderBy: [{ created_at: "desc" }, { id: "desc" }]
+    });
 
-    res.json(result.rows.map(buildAuthUser));
+    res.json(users.map(buildAuthUser));
   } catch (error) {
     console.error("Fetch users error:", error);
     res.status(500).json({ error: "Failed to fetch users" });
@@ -1595,22 +1490,19 @@ async function updateUserRole(req, res) {
       return res.status(400).json({ error: "role must be admin, lawyer, assistant, or client" });
     }
 
-    const result = await pool.query(
-      `
-      UPDATE users
-      SET role = $1,
-          is_approved = TRUE
-      WHERE id = $2
-      RETURNING id, username, full_name, email, role, is_approved, client_id
-      `,
-      [nextRole, req.params.id]
-    );
+    const user = await prisma.user.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        role: nextRole,
+        is_approved: true
+      }
+    }).catch(() => null);
 
-    if (!result.rows.length) {
+    if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json({ user: buildAuthUser(result.rows[0]) });
+    res.json({ user: buildAuthUser(user) });
   } catch (error) {
     console.error("Update user role error:", error);
     res.status(500).json({ error: "Failed to update user role" });
@@ -1622,17 +1514,15 @@ app.put("/api/admin/users/:id/role", requireRole(["admin"]), updateUserRole);
 
 app.get("/api/users/assignable", requireStaffAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT id, username, full_name, email, role, is_approved, client_id
-      FROM users
-      WHERE is_approved = TRUE
-        AND role IN ('admin', 'lawyer', 'assistant')
-      ORDER BY full_name ASC, username ASC, id ASC
-      `
-    );
+    const users = await prisma.user.findMany({
+      where: {
+        is_approved: true,
+        role: { in: ["admin", "lawyer", "assistant"] }
+      },
+      orderBy: [{ full_name: "asc" }, { username: "asc" }, { id: "asc" }]
+    });
 
-    res.json(result.rows.map(buildAuthUser));
+    res.json(users.map(buildAuthUser));
   } catch (error) {
     console.error("Fetch assignable users error:", error);
     res.status(500).json({ error: "Failed to fetch assignable users" });
@@ -1649,27 +1539,29 @@ async function registerUser(req, res) {
       return res.status(400).json({ error: "Username, email, and password are required." });
     }
 
-    const existingUser = await pool.query(
-      "SELECT id FROM users WHERE LOWER(email) = $1",
-      [email]
-    );
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true }
+    });
 
-    if (existingUser.rows.length) {
+    if (existingUser) {
       return res.status(409).json({ error: "An account with this email already exists." });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      `
-      INSERT INTO users (username, full_name, email, password_hash, role, is_approved)
-      VALUES ($1, $2, $3, $4, 'pending', FALSE)
-      RETURNING id, username, full_name, email, role, is_approved, client_id
-      `,
-      [username, username, email, passwordHash]
-    );
+    const user = await prisma.user.create({
+      data: {
+        username,
+        full_name: username,
+        email,
+        password_hash: passwordHash,
+        role: "pending",
+        is_approved: false
+      }
+    });
 
     res.status(201).json({
-      user: buildAuthUser(result.rows[0]),
+      user: buildAuthUser(user),
       message: "Registration submitted. Waiting for Admin Approval."
     });
   } catch (error) {
@@ -1690,20 +1582,14 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ error: "Email and password are required." });
     }
 
-    const result = await pool.query(
-      `
-        SELECT id, username, full_name, email, password_hash, role, is_approved, client_id
-        FROM users
-        WHERE LOWER(email) = $1
-      `,
-      [identifier]
-    );
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: identifier, mode: "insensitive" } }
+    });
 
-    if (!result.rows.length) {
+    if (!user) {
       return res.status(401).json({ error: "Invalid email or password." });
     }
 
-    const user = result.rows[0];
     const passwordMatches = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordMatches) {
