@@ -89,6 +89,34 @@ body.dark-mode .topbar {
   display: flex;
   gap: 0.3rem;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gtranslate_wrapper {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+}
+
+.topbar-actions .gtranslate_wrapper {
+  margin-right: 0.35rem;
+}
+
+.gtranslate_wrapper .gt_selector {
+  min-height: 34px;
+  padding: 0.45rem 2.1rem 0.45rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card-strong);
+  color: var(--text);
+  font: inherit;
+  box-shadow: var(--shadow-soft);
+}
+
+body.dark-mode .gtranslate_wrapper .gt_selector {
+  background: var(--card-strong);
+  color: var(--text);
 }
 
 .header-user {

@@ -16,6 +16,7 @@
         </div>
       </a>
       <div class="topbar-actions">
+        <div class="gtranslate_wrapper"></div>
         <span id="loggedInUserName" class="header-user"></span>
         <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
         <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
@@ -147,5 +148,15 @@
     </div>
     <script src="api.js"></script>
     <script src="case-detail.js"></script>
+    <script>
+      window.gtranslateSettings = {
+        default_language: "en",
+        languages: ["en", "de"],
+        wrapper_selector: ".gtranslate_wrapper",
+        flag_style: "2d",
+        alt_flags: { en: "usa" }
+      };
+    </script>
+    <script src="https://cdn.gtranslate.net/widgets/latest/dropdown.js" defer></script>
   </body>
 </html>

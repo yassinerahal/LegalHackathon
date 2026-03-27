@@ -113,6 +113,27 @@ main {
 .landing-nav {
   display: flex;
   gap: 0.8rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.landing-nav .gtranslate_wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.2rem;
+}
+
+.landing-nav .gtranslate_wrapper .gt_selector {
+  min-height: 46px;
+  padding: 0.78rem 2.4rem 0.78rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
 }
 
 .btn {

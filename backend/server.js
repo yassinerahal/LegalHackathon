@@ -148,11 +148,28 @@ app.get("/remote-setup.html", (req, res) => {
       .message { min-height: 1.1rem; margin: 0.15rem 0 0; font-size: 0.85rem; color: #b0303f; }
       .message.success { color: #0d7a4a; }
       .muted { margin: 0 0 0.25rem; font-size: 0.9rem; }
+      .gtranslate_wrapper {
+        justify-self: end;
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+      }
+      .gtranslate_wrapper .gt_selector {
+        min-height: 40px;
+        padding: 0.72rem 2.2rem 0.72rem 0.85rem;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--card-strong);
+        color: var(--text);
+        font: inherit;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      }
     </style>
   </head>
   <body>
     <main>
       <section class="card">
+        <div class="gtranslate_wrapper"></div>
         <img src="/icons/logo.png" alt="NEXTACT logo" class="logo" />
         <a href="/home.html" class="back-link">← Back to homepage</a>
         <h1>Set Up Your Remote Access</h1>
@@ -240,6 +257,16 @@ app.get("/remote-setup.html", (req, res) => {
       activateBtn.addEventListener("click", completeSetup);
       loadInvitation();
     </script>
+    <script>
+      window.gtranslateSettings = {
+        default_language: "en",
+        languages: ["en", "de"],
+        wrapper_selector: ".gtranslate_wrapper",
+        flag_style: "2d",
+        alt_flags: { en: "usa" }
+      };
+    </script>
+    <script src="https://cdn.gtranslate.net/widgets/latest/dropdown.js" defer></script>
   </body>
 </html>`);
 });
