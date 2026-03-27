@@ -1,6 +1,10 @@
 const API_BASE_URL = "http://localhost:3000/api";
 const STORED_SESSION_KEY = "nextact_current_user";
 
+function getApiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
 function getStoredSession() {
   try {
     const raw = localStorage.getItem(STORED_SESSION_KEY);
@@ -64,7 +68,7 @@ async function apiRequest(path, options = {}) {
     ...(options.headers || {})
   };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(getApiUrl(path), {
     ...options,
     headers
   });

@@ -5,7 +5,7 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const { PutObjectCommand } = require("@aws-sdk/client-s3");
+const { GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
 let QRCode = null;
 const pool = require("./db");
@@ -496,6 +496,71 @@ app.get("/api/cases/:id/documents", async (req, res) => {
   } catch (error) {
     console.error("Fetch case documents error:", error);
     res.status(500).json({ error: "Failed to fetch case documents" });
+  }
+});
+
+app.get("/api/documents/:s3Key/download", async (req, res) => {
+  try {
+    const s3Key = String(req.params.s3Key || "").trim();
+    if (!s3Key) {
+      return res.status(400).json({ error: "Invalid document key" });
+    }
+
+    const requestedName = typeof req.query.name === "string" ? req.query.name.trim() : "";
+    const documentResult = await pool.query(
+      `
+      SELECT original_name, mime_type
+      FROM case_documents
+      WHERE s3_key = $1
+      LIMIT 1
+      `,
+      [s3Key]
+    );
+
+    if (!documentResult.rows.length) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    await ensureStorageReady();
+    const objectResponse = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: bucketName,
+        Key: s3Key
+      })
+    );
+
+    const originalName = requestedName || documentResult.rows[0].original_name || s3Key;
+    const safeFileName = path.basename(originalName).replace(/"/g, "");
+
+    res.setHeader(
+      "Content-Type",
+      objectResponse.ContentType || documentResult.rows[0].mime_type || "application/octet-stream"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
+
+    if (objectResponse.Body && typeof objectResponse.Body.pipe === "function") {
+      objectResponse.Body.on("error", (error) => {
+        console.error("S3 download stream error:", error);
+        if (!res.headersSent) {
+          res.status(500).end("Failed to stream document");
+        } else {
+          res.destroy(error);
+        }
+      });
+      objectResponse.Body.pipe(res);
+      return;
+    }
+
+    if (objectResponse.Body && typeof objectResponse.Body.transformToByteArray === "function") {
+      const bodyBytes = await objectResponse.Body.transformToByteArray();
+      res.send(Buffer.from(bodyBytes));
+      return;
+    }
+
+    res.status(500).json({ error: "Document stream unavailable" });
+  } catch (error) {
+    console.error("Document download error:", error);
+    res.status(500).json({ error: "Failed to download document" });
   }
 });
 

@@ -179,6 +179,33 @@ function getFileExtension(name) {
   return name.slice(dotIndex + 1).toUpperCase();
 }
 
+function getFileIcon(filename) {
+  const extension = getFileExtension(filename).toLowerCase();
+  if (extension === "pdf") return "📄";
+  if (extension === "doc" || extension === "docx") return "📝";
+  if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(extension)) return "🖼️";
+  return "📁";
+}
+
+function getDocumentDownloadUrl(documentMeta) {
+  const s3Key = documentMeta?.s3Key || documentMeta?.s3_key || "";
+  const originalName = documentMeta?.name || documentMeta?.original_name || "file";
+  return getApiUrl(
+    `/documents/${encodeURIComponent(s3Key)}/download?name=${encodeURIComponent(originalName)}`
+  );
+}
+
+function triggerDocumentDownload(documentMeta) {
+  const downloadUrl = getDocumentDownloadUrl(documentMeta);
+  if (!documentMeta?.s3Key && !documentMeta?.s3_key) return;
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = documentMeta?.name || documentMeta?.original_name || "file";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function isImageFile(file) {
   return file.mimeType && file.mimeType.startsWith("image/");
 }
@@ -315,21 +342,41 @@ function renderCaseDetails(entry) {
         attachedList.className = "doc-drop-file-list";
 
         doc.attachedFiles.forEach((attachedFile) => {
-          const fileChip = document.createElement("span");
-          fileChip.className = "doc-drop-thumb-label";
-          fileChip.textContent = attachedFile.original_name;
-          attachedList.appendChild(fileChip);
+          const fileRow = document.createElement("div");
+          fileRow.className = "doc-drop-file-item";
+
+          const fileMeta = document.createElement("div");
+          fileMeta.className = "doc-drop-file-meta";
+
+          const icon = document.createElement("span");
+          icon.className = "doc-file-icon";
+          icon.textContent = getFileIcon(attachedFile.original_name || "");
+
+          const fileName = document.createElement("span");
+          fileName.className = "doc-drop-file-name";
+          fileName.textContent = attachedFile.original_name;
+
+          const downloadLink = document.createElement("a");
+          downloadLink.className = "btn-ghost btn-small doc-download-link";
+          downloadLink.href = getDocumentDownloadUrl(attachedFile);
+          downloadLink.textContent = "Download";
+
+          fileMeta.appendChild(icon);
+          fileMeta.appendChild(fileName);
+          fileRow.appendChild(fileMeta);
+          fileRow.appendChild(downloadLink);
+          attachedList.appendChild(fileRow);
         });
 
         dropField.appendChild(attachedList);
       }
 
-      const dropHint = document.createElement("p");
-      dropHint.className = "doc-drop-hint";
-      dropHint.textContent = doc.attachedFiles?.length
-        ? "Drop more files here to attach them to this placeholder"
-        : "Drop uploaded files or local files here";
-      dropField.appendChild(dropHint);
+      if (!doc.attachedFiles?.length) {
+        const dropHint = document.createElement("p");
+        dropHint.className = "doc-drop-hint";
+        dropHint.textContent = "Drop uploaded files or local files here";
+        dropField.appendChild(dropHint);
+      }
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
@@ -537,6 +584,11 @@ uploadedDocumentsGrid.addEventListener("click", (event) => {
   if (!fileCard) return;
   const previewUrl = fileCard.dataset.previewUrl || "";
   const fileName = fileCard.dataset.fileName || "file";
+  const s3Key = fileCard.dataset.s3Key || "";
+  if (!previewUrl && s3Key) {
+    triggerDocumentDownload({ name: fileName, s3Key });
+    return;
+  }
   if (!previewUrl) {
     window.alert(`Preview unavailable for ${fileName}.`);
     return;
@@ -564,13 +616,17 @@ document.addEventListener("click", (event) => {
 });
 
 ctxDownloadBtn.addEventListener("click", () => {
-  if (!contextMenuFile || !contextMenuFile.previewUrl) return;
-  const link = document.createElement("a");
-  link.href = contextMenuFile.previewUrl;
-  link.download = contextMenuFile.name || "file";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  if (!contextMenuFile) return;
+  if (contextMenuFile.s3Key) {
+    triggerDocumentDownload(contextMenuFile);
+  } else if (contextMenuFile.previewUrl) {
+    const link = document.createElement("a");
+    link.href = contextMenuFile.previewUrl;
+    link.download = contextMenuFile.name || "file";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
   hideContextMenu();
 });
 
