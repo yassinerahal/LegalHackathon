@@ -133,6 +133,8 @@ function sanitizeDocumentForStorage(document) {
     name: document.name,
     mimeType: document.mimeType || "",
     s3Key: document.s3Key || "",
+    encryptionIv: document.encryptionIv || "",
+    encryptionTag: document.encryptionTag || "",
     uploadedAt: document.uploadedAt || ""
   };
 }
@@ -185,16 +187,18 @@ async function initDashboard() {
     const pendingUsers = session.role === "admin" ? responses.shift() || [] : [];
     const allUsers = session.role === "admin" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
-    const caseDocumentsById = new Map(
-      (
-        await Promise.all(
-          cases.map(async (entry) => [
-            String(entry.id),
-            await getCaseDocuments(entry.id)
-          ])
-        )
-      ).map(([caseId, documents]) => [caseId, documents])
+    const caseDocumentsById = new Map();
+    const documentResults = await Promise.allSettled(
+      cases.map(async (entry) => ({
+        caseId: String(entry.id),
+        documents: await getCaseDocuments(entry.id)
+      }))
     );
+    documentResults.forEach((result) => {
+      if (result.status === "fulfilled") {
+        caseDocumentsById.set(result.value.caseId, result.value.documents);
+      }
+    });
 
     state.cases = cases.map((entry) => ({
       id: entry.id,
@@ -215,6 +219,8 @@ async function initDashboard() {
         previewUrl: "",
         mimeType: document.mime_type || "",
         s3Key: document.s3_key,
+        encryptionIv: document.encryption_iv || "",
+        encryptionTag: document.encryption_tag || "",
         uploadedAt: document.uploaded_at || ""
       }))
     }));
@@ -542,7 +548,9 @@ async function uploadPendingFilesToCase() {
         const linkedDocument = await linkCaseDocument(selectedCaseId, {
           original_name: file.name,
           s3_key: uploadData.filePath,
-          mime_type: file.type || "application/octet-stream"
+          mime_type: file.type || "application/octet-stream",
+          encryption_iv: uploadData.encryption_iv,
+          encryption_tag: uploadData.encryption_tag
         });
 
         existingDocs.push({
@@ -550,6 +558,8 @@ async function uploadPendingFilesToCase() {
           previewUrl: "",
           mimeType: linkedDocument.mime_type || file.type || "",
           s3Key: linkedDocument.s3_key,
+          encryptionIv: linkedDocument.encryption_iv || "",
+          encryptionTag: linkedDocument.encryption_tag || "",
           uploadedAt: linkedDocument.uploaded_at || ""
         });
         existingNames.add(file.name);
@@ -672,12 +682,14 @@ function renderDocPlaceholderList() {
 function normalizeUploadedDocuments(documents) {
   return (documents || []).map((item) =>
     typeof item === "string"
-      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", uploadedAt: "" }
+      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", encryptionIv: "", encryptionTag: "", uploadedAt: "" }
       : {
           name: item.name,
           previewUrl: item.previewUrl || "",
           mimeType: item.mimeType || "",
           s3Key: item.s3Key || "",
+          encryptionIv: item.encryptionIv || "",
+          encryptionTag: item.encryptionTag || "",
           uploadedAt: item.uploadedAt || ""
         }
   );
@@ -1087,7 +1099,9 @@ docPlaceholderList.addEventListener("drop", (event) => {
     placeholder.attachedFiles.push({
       original_name: linkedFile.name,
       s3_key: linkedFile.s3Key || "",
-      mime_type: linkedFile.mimeType || ""
+      mime_type: linkedFile.mimeType || "",
+      encryption_iv: linkedFile.encryptionIv || "",
+      encryption_tag: linkedFile.encryptionTag || ""
     });
   }
   placeholder.status = placeholder.attachedFiles.length ? "Uploaded" : "Pending";
@@ -1283,7 +1297,9 @@ saveBtn.addEventListener("click", async () => {
           const linkedDocument = await linkCaseDocument(targetCaseId, {
             original_name: file.name,
             s3_key: uploadData.filePath,
-            mime_type: file.type || "application/octet-stream"
+            mime_type: file.type || "application/octet-stream",
+            encryption_iv: uploadData.encryption_iv,
+            encryption_tag: uploadData.encryption_tag
           });
 
           uploadedDocuments.push({
@@ -1291,9 +1307,16 @@ saveBtn.addEventListener("click", async () => {
             previewUrl: "",
             mimeType: linkedDocument.mime_type || file.type || "",
             s3Key: linkedDocument.s3_key,
+            encryptionIv: linkedDocument.encryption_iv || "",
+            encryptionTag: linkedDocument.encryption_tag || "",
             uploadedAt: linkedDocument.uploaded_at || ""
           });
-          uploadedDocumentMap.set(linkedDocument.original_name, linkedDocument.s3_key);
+          uploadedDocumentMap.set(linkedDocument.original_name, {
+            s3_key: linkedDocument.s3_key,
+            mime_type: linkedDocument.mime_type || file.type || "",
+            encryption_iv: linkedDocument.encryption_iv || "",
+            encryption_tag: linkedDocument.encryption_tag || ""
+          });
         } catch (error) {
           console.error(`Error uploading ${file.name} with new case:`, error);
           failedUploads.push(file.name);
@@ -1327,12 +1350,14 @@ saveBtn.addEventListener("click", async () => {
               : placeholder.status || "Pending",
           attached_files: (placeholder.attachedFiles || [])
             .map((file) => {
-              const s3Key = uploadedDocumentMap.get(file.original_name);
-              if (!s3Key) return null;
+              const uploadedDocument = uploadedDocumentMap.get(file.original_name);
+              if (!uploadedDocument?.s3_key) return null;
               return {
                 original_name: file.original_name,
-                s3_key: s3Key,
-                mime_type: file.mime_type || ""
+                s3_key: uploadedDocument.s3_key,
+                mime_type: uploadedDocument.mime_type || file.mime_type || "",
+                encryption_iv: uploadedDocument.encryption_iv || "",
+                encryption_tag: uploadedDocument.encryption_tag || ""
               };
             })
             .filter(Boolean)

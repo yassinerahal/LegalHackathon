@@ -15,6 +15,7 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
+const FILE_ENCRYPTION_KEY_HEX = process.env.FILE_ENCRYPTION_KEY;
 const REMOTE_ACCESS_EXPIRY_HOURS = Number(process.env.REMOTE_ACCESS_EXPIRY_HOURS || 48);
 const BOOTSTRAP_ADMIN_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || "admin";
 const BOOTSTRAP_ADMIN_EMAIL = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@nextact.local").trim().toLowerCase();
@@ -24,8 +25,58 @@ if (!JWT_SECRET) {
   throw new Error("JWT_SECRET must be set in the backend environment.");
 }
 
+if (!FILE_ENCRYPTION_KEY_HEX) {
+  throw new Error("FILE_ENCRYPTION_KEY must be set in the backend environment.");
+}
+
+const FILE_ENCRYPTION_KEY = Buffer.from(FILE_ENCRYPTION_KEY_HEX, "hex");
+
+if (FILE_ENCRYPTION_KEY.length !== 32) {
+  throw new Error("FILE_ENCRYPTION_KEY must be a 32-byte hex string.");
+}
+
 app.use(cors());
 app.use(express.json());
+
+function encryptFileBuffer(buffer) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv("aes-256-gcm", FILE_ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    encryptedBuffer: encrypted,
+    encryptionIv: iv.toString("hex"),
+    encryptionTag: authTag.toString("hex")
+  };
+}
+
+function decryptFileBuffer(buffer, encryptionIv, encryptionTag) {
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    FILE_ENCRYPTION_KEY,
+    Buffer.from(encryptionIv, "hex")
+  );
+  decipher.setAuthTag(Buffer.from(encryptionTag, "hex"));
+  return Buffer.concat([decipher.update(buffer), decipher.final()]);
+}
+
+async function readObjectBodyAsBuffer(body) {
+  if (!body) {
+    throw new Error("Document stream unavailable");
+  }
+
+  if (typeof body.transformToByteArray === "function") {
+    const bytes = await body.transformToByteArray();
+    return Buffer.from(bytes);
+  }
+
+  const chunks = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 async function caseExists(caseId) {
   const entry = await prisma.case.findUnique({
@@ -336,6 +387,11 @@ function formatDateOnly(value) {
 
 async function ensureRemoteAccessSchema() {
   await prisma.$connect();
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE document_versions
+    ADD COLUMN IF NOT EXISTS encryption_iv VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS encryption_tag VARCHAR(255)
+  `);
 }
 
 async function ensureBootstrapAdmin() {
@@ -404,6 +460,26 @@ async function getCaseAccessRow(caseId, userId) {
     id: entry.id,
     owner_id: entry.owner_id,
     is_assigned: entry.case_assignments.length > 0
+  };
+}
+
+function buildCaseAccessFlags(entry, userId, role) {
+  const isOwner = String(entry.owner_id || "") === String(userId);
+  const isAssigned = Array.isArray(entry.case_assignments) ? entry.case_assignments.length > 0 : false;
+  const canView =
+    role === "admin" ||
+    role === "lawyer" ||
+    (role === "assistant" && (isOwner || isAssigned));
+  const canEdit =
+    role === "admin" ||
+    (role === "lawyer" && (isOwner || isAssigned)) ||
+    (role === "assistant" && isAssigned);
+
+  return {
+    isOwner,
+    isAssigned,
+    canView,
+    canEdit
   };
 }
 
@@ -518,19 +594,22 @@ app.post("/api/upload", requireStaffAuth, upload.single("document"), async (req,
     await ensureStorageReady();
 
     const uniqueFileName = `${Date.now()}-${file.originalname}`;
+    const { encryptedBuffer, encryptionIv, encryptionTag } = encryptFileBuffer(file.buffer);
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: uniqueFileName,
-      Body: file.buffer,
-      ContentType: file.mimetype,
+      Body: encryptedBuffer,
+      ContentType: "application/octet-stream"
     });
 
     await s3Client.send(command);
 
     res.status(200).json({
       message: "File uploaded successfully",
-      filePath: uniqueFileName
+      filePath: uniqueFileName,
+      encryption_iv: encryptionIv,
+      encryption_tag: encryptionTag
     });
   } catch (error) {
     console.error("Upload error:", error);
@@ -544,10 +623,12 @@ app.post("/api/upload", requireStaffAuth, upload.single("document"), async (req,
 app.post("/api/cases/:id/documents", requireCaseEditAccess, async (req, res) => {
   try {
     const caseId = req.params.id;
-    const { original_name, s3_key, mime_type } = req.body;
+    const { original_name, s3_key, mime_type, encryption_iv, encryption_tag } = req.body;
 
-    if (!original_name || !s3_key) {
-      return res.status(400).json({ error: "original_name and s3_key are required" });
+    if (!original_name || !s3_key || !encryption_iv || !encryption_tag) {
+      return res
+        .status(400)
+        .json({ error: "original_name, s3_key, encryption_iv, and encryption_tag are required" });
     }
 
     if (!(await caseExists(caseId))) {
@@ -568,6 +649,8 @@ app.post("/api/cases/:id/documents", requireCaseEditAccess, async (req, res) => 
           original_name,
           s3_key,
           mime_type: mime_type || null,
+          encryption_iv,
+          encryption_tag,
           uploaded_by: req.auth.id
         }
       });
@@ -579,11 +662,15 @@ app.post("/api/cases/:id/documents", requireCaseEditAccess, async (req, res) => 
       original_name: createdVersion.original_name,
       s3_key: createdVersion.s3_key,
       mime_type: createdVersion.mime_type,
+      encryption_iv: createdVersion.encryption_iv,
+      encryption_tag: createdVersion.encryption_tag,
       uploaded_at: createdVersion.uploaded_at
     });
   } catch (error) {
     console.error("Database insert error:", error);
-    res.status(500).json({ error: "Failed to save document info to database" });
+    res.status(500).json({
+      error: `Failed to save document info to database${error.message ? `: ${error.message}` : ""}`
+    });
   }
 });
 
@@ -620,6 +707,8 @@ app.get("/api/cases/:id/documents", requireStaffAuth, async (req, res) => {
         original_name: version.original_name,
         s3_key: version.s3_key,
         mime_type: version.mime_type,
+        encryption_iv: version.encryption_iv,
+        encryption_tag: version.encryption_tag,
         uploaded_at: version.uploaded_at
       }))
     );
@@ -639,11 +728,20 @@ app.get("/api/documents/:s3Key/download", requireStaffAuth, async (req, res) => 
     const requestedName = typeof req.query.name === "string" ? req.query.name.trim() : "";
     const documentVersion = await prisma.documentVersion.findUnique({
       where: { s3_key: s3Key },
-      select: { original_name: true, mime_type: true }
+      select: {
+        original_name: true,
+        mime_type: true,
+        encryption_iv: true,
+        encryption_tag: true
+      }
     });
 
     if (!documentVersion) {
       return res.status(404).json({ error: "Document not found" });
+    }
+
+    if (!documentVersion.encryption_iv || !documentVersion.encryption_tag) {
+      return res.status(500).json({ error: "Document encryption metadata is missing" });
     }
 
     await ensureStorageReady();
@@ -657,32 +755,16 @@ app.get("/api/documents/:s3Key/download", requireStaffAuth, async (req, res) => 
     const originalName = requestedName || documentVersion.original_name || s3Key;
     const safeFileName = path.basename(originalName).replace(/"/g, "");
 
-    res.setHeader(
-      "Content-Type",
-      objectResponse.ContentType || documentVersion.mime_type || "application/octet-stream"
+    const encryptedBuffer = await readObjectBodyAsBuffer(objectResponse.Body);
+    const decryptedBuffer = decryptFileBuffer(
+      encryptedBuffer,
+      documentVersion.encryption_iv,
+      documentVersion.encryption_tag
     );
+
+    res.setHeader("Content-Type", documentVersion.mime_type || "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
-
-    if (objectResponse.Body && typeof objectResponse.Body.pipe === "function") {
-      objectResponse.Body.on("error", (error) => {
-        console.error("S3 download stream error:", error);
-        if (!res.headersSent) {
-          res.status(500).end("Failed to stream document");
-        } else {
-          res.destroy(error);
-        }
-      });
-      objectResponse.Body.pipe(res);
-      return;
-    }
-
-    if (objectResponse.Body && typeof objectResponse.Body.transformToByteArray === "function") {
-      const bodyBytes = await objectResponse.Body.transformToByteArray();
-      res.send(Buffer.from(bodyBytes));
-      return;
-    }
-
-    res.status(500).json({ error: "Document stream unavailable" });
+    res.send(decryptedBuffer);
   } catch (error) {
     console.error("Document download error:", error);
     res.status(500).json({ error: "Failed to download document" });
@@ -758,14 +840,16 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
   try {
     const caseId = req.params.id;
     const placeholderId = req.params.placeholderId;
-    const { original_name, s3_key, mime_type } = req.body;
+    const { original_name, s3_key, mime_type, encryption_iv, encryption_tag } = req.body;
 
     if (!/^\d+$/.test(String(caseId)) || !/^\d+$/.test(String(placeholderId))) {
       return res.status(400).json({ error: "Invalid case or placeholder id" });
     }
 
-    if (!original_name || !s3_key) {
-      return res.status(400).json({ error: "original_name and s3_key are required" });
+    if (!original_name || !s3_key || !encryption_iv || !encryption_tag) {
+      return res
+        .status(400)
+        .json({ error: "original_name, s3_key, encryption_iv, and encryption_tag are required" });
     }
 
     if (!(await caseExists(caseId))) {
@@ -805,7 +889,9 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
     attachedFiles.push({
       original_name,
       s3_key,
-      mime_type: mime_type || null
+      mime_type: mime_type || null,
+      encryption_iv,
+      encryption_tag
     });
 
     const updatedPlaceholder = await prisma.casePlaceholder.update({
@@ -991,6 +1077,15 @@ app.post("/api/clients", requireStaffAuth, async (req, res) => {
 app.get("/api/cases", requireStaffAuth, async (req, res) => {
   try {
     const cases = await prisma.case.findMany({
+      where:
+        req.auth.role === "assistant"
+          ? {
+              OR: [
+                { owner_id: Number(req.auth.id) },
+                { case_assignments: { some: { user_id: Number(req.auth.id) } } }
+              ]
+            }
+          : undefined,
       include: {
         client: { select: { full_name: true } },
         owner: { select: { username: true, full_name: true } },
@@ -1006,12 +1101,7 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
 
     res.json(
       cases.map((entry) => {
-        const isOwner = String(entry.owner_id || "") === String(req.auth.id);
-        const isAssigned = entry.case_assignments.length > 0;
-        const canEdit =
-          req.auth.role === "admin" ||
-          (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
-          (req.auth.role === "assistant" && isAssigned);
+        const access = buildCaseAccessFlags(entry, req.auth.id, req.auth.role);
 
         return {
           id: entry.id,
@@ -1025,9 +1115,9 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
           client_name: entry.client?.full_name || "",
           owner_username: entry.owner?.username || "",
           owner_full_name: entry.owner?.full_name || "",
-          is_owner: isOwner,
-          is_assigned: isAssigned,
-          can_edit: canEdit
+          is_owner: access.isOwner,
+          is_assigned: access.isAssigned,
+          can_edit: access.canEdit
         };
       })
     );
@@ -1057,12 +1147,11 @@ app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
       return res.status(404).json({ error: "Case not found" });
     }
 
-    const isOwner = String(entry.owner_id || "") === String(req.auth.id);
-    const isAssigned = entry.case_assignments.length > 0;
-    const canEdit =
-      req.auth.role === "admin" ||
-      (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
-      (req.auth.role === "assistant" && isAssigned);
+    const access = buildCaseAccessFlags(entry, req.auth.id, req.auth.role);
+
+    if (!access.canView) {
+      return res.status(403).json({ error: "You do not have access to this case" });
+    }
 
     res.json({
       id: entry.id,
@@ -1076,9 +1165,9 @@ app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
       client_name: entry.client?.full_name || "",
       owner_username: entry.owner?.username || "",
       owner_full_name: entry.owner?.full_name || "",
-      is_owner: isOwner,
-      is_assigned: isAssigned,
-      can_edit: canEdit
+      is_owner: access.isOwner,
+      is_assigned: access.isAssigned,
+      can_edit: access.canEdit
     });
   } catch (error) {
     console.error(error);
@@ -1207,8 +1296,23 @@ app.post("/api/cases/:id/assign", requireCaseOwnerOrAdmin, async (req, res) => {
 
 app.get("/api/cases/:id/assignments", requireStaffAuth, async (req, res) => {
   try {
-    if (!(await caseExists(req.params.id))) {
+    const entry = await prisma.case.findUnique({
+      where: { id: Number(req.params.id) },
+      include: {
+        case_assignments: {
+          where: { user_id: Number(req.auth.id) },
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!entry) {
       return res.status(404).json({ error: "Case not found" });
+    }
+
+    const access = buildCaseAccessFlags(entry, req.auth.id, req.auth.role);
+    if (!access.canView) {
+      return res.status(403).json({ error: "You do not have access to this case" });
     }
 
     const assignments = await prisma.caseAssignment.findMany({

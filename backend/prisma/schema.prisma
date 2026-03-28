@@ -102,6 +102,8 @@ model DocumentVersion {
   original_name  String
   s3_key         String    @unique
   mime_type      String?
+  encryption_iv  String?
+  encryption_tag String?
   uploaded_at    DateTime  @default(now())
   uploaded_by    Int?
   document       Document  @relation(fields: [document_id], references: [id], onDelete: Cascade)

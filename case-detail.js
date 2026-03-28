@@ -79,6 +79,31 @@ function canManageCaseAssignments(session = getStoredSession(), entry = null) {
   return session.role === "admin" || Boolean(entry.is_owner);
 }
 
+function canModifyCaseMetadata(session = getStoredSession(), entry = null) {
+  if (!session || !entry) return false;
+  if (session.role === "admin") return true;
+  if (session.role === "lawyer") return Boolean(entry.can_edit || entry.is_owner || entry.is_assigned);
+  return false;
+}
+
+function canDeleteCurrentCase(session = getStoredSession(), entry = null) {
+  if (!session || !entry) return false;
+  return session.role === "admin" || Boolean(entry.is_owner);
+}
+
+function setEditModalReadOnlyState(isReadOnly) {
+  editCaseName.readOnly = isReadOnly;
+  editClientNames.readOnly = isReadOnly;
+  editCaseStatus.disabled = isReadOnly;
+  editCaseDeadline.readOnly = isReadOnly;
+  editCaseDescription.readOnly = isReadOnly;
+  editCaseComment.readOnly = isReadOnly;
+  saveEditBtn.hidden = isReadOnly;
+  saveEditBtn.disabled = isReadOnly;
+  finishCaseBtn.hidden = isReadOnly;
+  finishCaseBtn.disabled = isReadOnly;
+}
+
 function readCases() {
   const raw = localStorage.getItem(CASES_KEY);
   if (!raw) return [];
@@ -106,6 +131,8 @@ function writeCases(cases) {
           name: document.name,
           mimeType: document.mimeType || "",
           s3Key: document.s3Key || "",
+          encryptionIv: document.encryptionIv || "",
+          encryptionTag: document.encryptionTag || "",
           uploadedAt: document.uploadedAt || ""
         }))
       }))
@@ -123,12 +150,15 @@ function mergeCaseIntoLocal(entry) {
   const cases = readCases();
   const index = cases.findIndex((item) => String(item.id) === String(entry.id));
   const existing = index >= 0 ? cases[index] : {};
+  const hasEntryComments = Array.isArray(entry.comments);
+  const hasEntryRequiredDocuments = Array.isArray(entry.requiredDocuments);
+  const hasEntryUploadedDocuments = Array.isArray(entry.uploadedDocuments);
   const mergedEntry = {
     ...existing,
     ...entry,
-    comments: existing.comments || entry.comments || [],
-    requiredDocuments: existing.requiredDocuments || entry.requiredDocuments || [],
-    uploadedDocuments: existing.uploadedDocuments || entry.uploadedDocuments || []
+    comments: hasEntryComments ? entry.comments : existing.comments || [],
+    requiredDocuments: hasEntryRequiredDocuments ? entry.requiredDocuments : existing.requiredDocuments || [],
+    uploadedDocuments: hasEntryUploadedDocuments ? entry.uploadedDocuments : existing.uploadedDocuments || []
   };
 
   if (index >= 0) {
@@ -210,15 +240,36 @@ function getDocumentDownloadUrl(documentMeta) {
   );
 }
 
-function triggerDocumentDownload(documentMeta) {
+async function triggerDocumentDownload(documentMeta) {
   const downloadUrl = getDocumentDownloadUrl(documentMeta);
   if (!documentMeta?.s3Key && !documentMeta?.s3_key) return;
-  const link = document.createElement("a");
-  link.href = downloadUrl;
-  link.download = documentMeta?.name || documentMeta?.original_name || "file";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    const response = await fetch(downloadUrl, {
+      headers: buildAuthHeaders()
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        clearStoredSession();
+        window.location.href = "login.html";
+        return;
+      }
+      throw new Error("Failed to download document.");
+    }
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = documentMeta?.name || documentMeta?.original_name || "file";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error("Failed to download document:", error);
+    window.alert(error.message || "Failed to download document.");
+  }
 }
 
 function isImageFile(file) {
@@ -228,12 +279,14 @@ function isImageFile(file) {
 function normalizeUploadedDocuments(documents) {
   return (documents || []).map((item) =>
     typeof item === "string"
-      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", uploadedAt: "" }
+      ? { name: item, previewUrl: "", mimeType: "", s3Key: "", encryptionIv: "", encryptionTag: "", uploadedAt: "" }
       : {
           name: item.name,
           previewUrl: item.previewUrl || "",
           mimeType: item.mimeType || "",
           s3Key: item.s3Key || "",
+          encryptionIv: item.encryptionIv || "",
+          encryptionTag: item.encryptionTag || "",
           uploadedAt: item.uploadedAt || ""
         }
   );
@@ -343,7 +396,9 @@ async function saveUploadedFilesToCase(files) {
         const linkedDocument = await linkCaseDocument(currentCaseId, {
           original_name: file.name,
           s3_key: uploadData.filePath,
-          mime_type: file.type || "application/octet-stream"
+          mime_type: file.type || "application/octet-stream",
+          encryption_iv: uploadData.encryption_iv,
+          encryption_tag: uploadData.encryption_tag
         });
 
         currentDocs.push({
@@ -351,6 +406,8 @@ async function saveUploadedFilesToCase(files) {
           previewUrl: "",
           mimeType: linkedDocument.mime_type || file.type || "",
           s3Key: linkedDocument.s3_key,
+          encryptionIv: linkedDocument.encryption_iv || "",
+          encryptionTag: linkedDocument.encryption_tag || "",
           uploadedAt: linkedDocument.uploaded_at || ""
         });
         existing.add(file.name);
@@ -373,6 +430,7 @@ async function saveUploadedFilesToCase(files) {
 function renderCaseDetails(entry) {
   currentCaseId = entry.id;
   const canEditCurrentCase = canEditCase(getStoredSession(), entry);
+  const canModifyMetadata = canModifyCaseMetadata(getStoredSession(), entry);
   caseTitle.textContent = entry.title || "Case";
   caseMeta.textContent = `${entry.stage || "No description"} • ${(entry.clientNames || []).join(", ")}`;
   caseDescription.textContent = entry.stage || "No description added yet.";
@@ -396,6 +454,9 @@ function renderCaseDetails(entry) {
       card.dataset.fileName = file.name;
       card.dataset.previewUrl = file.previewUrl || "";
       card.dataset.s3Key = file.s3Key || "";
+      card.dataset.mimeType = file.mimeType || "";
+      card.dataset.encryptionIv = file.encryptionIv || "";
+      card.dataset.encryptionTag = file.encryptionTag || "";
       const thumb = document.createElement("div");
       thumb.className = "uploaded-file-thumb";
       if (isImageFile(file) && file.previewUrl) {
@@ -466,6 +527,8 @@ function renderCaseDetails(entry) {
           downloadLink.className = "btn-ghost btn-small doc-download-link";
           downloadLink.href = getDocumentDownloadUrl(attachedFile);
           downloadLink.textContent = "Download";
+          downloadLink.dataset.s3Key = attachedFile.s3_key || "";
+          downloadLink.dataset.fileName = attachedFile.original_name || "file";
 
           fileMeta.appendChild(icon);
           fileMeta.appendChild(fileName);
@@ -504,9 +567,10 @@ function renderCaseDetails(entry) {
   detailDocPlaceholderName.disabled = !canEditCurrentCase;
   detailDocPlaceholderStatus.disabled = !canEditCurrentCase;
   editCaseBtn.hidden = !canEditCurrentCase;
-  saveEditBtn.disabled = !canEditCurrentCase;
-  finishCaseBtn.hidden = !canEditCurrentCase;
-  deleteCaseBtn.hidden = !canEditCurrentCase;
+  saveEditBtn.disabled = !canModifyMetadata;
+  saveEditBtn.hidden = !canModifyMetadata;
+  finishCaseBtn.hidden = !canModifyMetadata;
+  deleteCaseBtn.hidden = !canDeleteCurrentCase(getStoredSession(), entry);
   renderCaseAssignments(entry);
 
   commentsList.innerHTML = "";
@@ -587,7 +651,9 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
       {
         original_name: documentMeta.name,
         s3_key: documentMeta.s3Key,
-        mime_type: documentMeta.mimeType || ""
+        mime_type: documentMeta.mimeType || "",
+        encryption_iv: documentMeta.encryptionIv || "",
+        encryption_tag: documentMeta.encryptionTag || ""
       }
     );
 
@@ -642,12 +708,14 @@ async function assignSelectedUserToCase() {
 function openEditModal() {
   const entry = readCases().find((item) => String(item.id) === String(currentCaseId));
   if (!entry) return;
+  const isReadOnly = !canModifyCaseMetadata(getStoredSession(), entry);
   editCaseName.value = entry.title || "";
   editClientNames.value = (entry.clientNames || []).join(", ");
   editCaseStatus.value = entry.status || "Active";
   editCaseDeadline.value = entry.deadline || "";
   editCaseDescription.value = entry.stage || "";
   editCaseComment.value = "";
+  setEditModalReadOnlyState(isReadOnly);
   selectedEditAssigneeIds = new Set(assignedUsers.map((user) => String(user.id)));
   renderEditCaseTeamSelection(entry);
   editCaseModal.showModal();
@@ -717,7 +785,10 @@ uploadedDocumentsGrid.addEventListener("dragstart", (event) => {
     "application/json",
     JSON.stringify({
       name: fileCard.dataset.fileName || "",
-      s3Key: fileCard.dataset.s3Key || ""
+      s3Key: fileCard.dataset.s3Key || "",
+      mimeType: fileCard.dataset.mimeType || "",
+      encryptionIv: fileCard.dataset.encryptionIv || "",
+      encryptionTag: fileCard.dataset.encryptionTag || ""
     })
   );
   event.dataTransfer.setData("text/plain", fileCard.dataset.fileName || "");
@@ -835,7 +906,9 @@ requiredDocsList.addEventListener("drop", (event) => {
           const linkedDocument = await linkCaseDocument(currentCaseId, {
             original_name: droppedFile.name,
             s3_key: uploadData.filePath,
-            mime_type: droppedFile.type || "application/octet-stream"
+            mime_type: droppedFile.type || "application/octet-stream",
+            encryption_iv: uploadData.encryption_iv,
+            encryption_tag: uploadData.encryption_tag
           });
 
           currentDocs.push({
@@ -843,6 +916,8 @@ requiredDocsList.addEventListener("drop", (event) => {
             previewUrl: "",
             mimeType: linkedDocument.mime_type || droppedFile.type || "",
             s3Key: linkedDocument.s3_key,
+            encryptionIv: linkedDocument.encryption_iv || "",
+            encryptionTag: linkedDocument.encryption_tag || "",
             uploadedAt: linkedDocument.uploaded_at || ""
           });
 
@@ -850,6 +925,8 @@ requiredDocsList.addEventListener("drop", (event) => {
             {
               name: linkedDocument.original_name,
               s3Key: linkedDocument.s3_key,
+              encryptionIv: linkedDocument.encryption_iv || "",
+              encryptionTag: linkedDocument.encryption_tag || "",
               mimeType: linkedDocument.mime_type || droppedFile.type || ""
             },
             placeholderIndex
@@ -893,6 +970,16 @@ requiredDocsList.addEventListener("drop", (event) => {
 });
 
 requiredDocsList.addEventListener("click", (event) => {
+  const downloadLink = event.target.closest(".doc-download-link");
+  if (downloadLink) {
+    event.preventDefault();
+    triggerDocumentDownload({
+      original_name: downloadLink.dataset.fileName || "file",
+      s3_key: downloadLink.dataset.s3Key || ""
+    });
+    return;
+  }
+
   const removeBtn = event.target.closest("[data-remove-doc-index]");
   if (!removeBtn) return;
   const placeholderIndex = Number(removeBtn.dataset.removeDocIndex);
@@ -933,6 +1020,10 @@ saveEditBtn.addEventListener("click", async () => {
   const cases = readCases();
   const caseIndex = cases.findIndex((entry) => String(entry.id) === String(currentCaseId));
   if (caseIndex < 0) return;
+  if (!canModifyCaseMetadata(getStoredSession(), cases[caseIndex])) {
+    editCaseModal.close();
+    return;
+  }
 
   const title = editCaseName.value.trim();
   const clients = parseClientNames(editClientNames.value);
@@ -1025,16 +1116,30 @@ async function initPage() {
   }
 
   try {
-    const [entry, documents, placeholders, caseAssignmentRows, assignableUsers] = await Promise.all([
-      getCaseById(caseId),
+    const entry = await getCaseById(caseId);
+    const optionalResults = await Promise.allSettled([
       getCaseDocuments(caseId),
       getCasePlaceholders(caseId),
       getCaseAssignments(caseId),
       getAssignableUsers()
     ]);
 
-    assignedUsers = caseAssignmentRows;
-    availableAssignees = assignableUsers;
+    const documents =
+      optionalResults[0]?.status === "fulfilled" && Array.isArray(optionalResults[0].value)
+        ? optionalResults[0].value
+        : [];
+    const placeholders =
+      optionalResults[1]?.status === "fulfilled" && Array.isArray(optionalResults[1].value)
+        ? optionalResults[1].value
+        : [];
+    assignedUsers =
+      optionalResults[2]?.status === "fulfilled" && Array.isArray(optionalResults[2].value)
+        ? optionalResults[2].value
+        : [];
+    availableAssignees =
+      optionalResults[3]?.status === "fulfilled" && Array.isArray(optionalResults[3].value)
+        ? optionalResults[3].value
+        : [];
 
     const storedCase = readCases().find((item) => String(item.id) === String(caseId));
 
@@ -1064,6 +1169,8 @@ async function initPage() {
         previewUrl: "",
         mimeType: document.mime_type || "",
         s3Key: document.s3_key,
+        encryptionIv: document.encryption_iv || "",
+        encryptionTag: document.encryption_tag || "",
         uploadedAt: document.uploaded_at || ""
       }))
     });
@@ -1071,7 +1178,12 @@ async function initPage() {
     renderCaseDetails(mergedCase);
   } catch (error) {
     console.error("Failed to load case detail:", error);
-    window.location.href = "cases.html";
+    if (String(error.message || "").toLowerCase().includes("not found")) {
+      window.location.href = "cases.html";
+      return;
+    }
+
+    window.alert(error.message || "Failed to load this case.");
   }
 }
 requireSession();
