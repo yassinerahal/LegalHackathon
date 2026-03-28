@@ -13,6 +13,7 @@
   }
 
   function persistSession(result) {
+    setSessionToken(result.token || "");
     localStorage.setItem(
       AUTH_SESSION_KEY,
       JSON.stringify({
@@ -62,6 +63,7 @@
     try {
       const result = await signup({ full_name, email, password });
       clearStoredSession();
+      setSessionToken(result.token || "");
       setMessage(result.message || "Registration submitted. Waiting for Admin Approval.", true);
       window.setTimeout(() => {
         window.location.href = "login.html";

@@ -1,5 +1,6 @@
 const API_BASE_URL = "http://localhost:3000/api";
 const STORED_SESSION_KEY = "nextact_current_user";
+const STORED_JWT_KEY = "nextact_jwt";
 
 function getApiUrl(path) {
   return `${API_BASE_URL}${path}`;
@@ -16,10 +17,20 @@ function getStoredSession() {
 
 function clearStoredSession() {
   localStorage.removeItem(STORED_SESSION_KEY);
+  localStorage.removeItem(STORED_JWT_KEY);
+}
+
+function setSessionToken(token) {
+  if (token) {
+    localStorage.setItem(STORED_JWT_KEY, token);
+    return;
+  }
+
+  localStorage.removeItem(STORED_JWT_KEY);
 }
 
 function getSessionToken() {
-  return getStoredSession()?.token || "";
+  return localStorage.getItem(STORED_JWT_KEY) || getStoredSession()?.token || "";
 }
 
 function isFirmRole(role) {
@@ -89,6 +100,14 @@ function buildAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function shouldHandleSessionExpiry(path, responseStatus) {
+  if (![401, 403].includes(responseStatus)) {
+    return false;
+  }
+
+  return !path.startsWith("/auth/login") && !path.startsWith("/auth/register") && !path.startsWith("/auth/signup");
+}
+
 async function apiRequest(path, options = {}) {
   const headers = {
     ...buildAuthHeaders(),
@@ -109,6 +128,10 @@ async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
+    if (shouldHandleSessionExpiry(path, response.status)) {
+      clearStoredSession();
+      window.location.href = "login.html";
+    }
     throw new Error(data?.error || "Request failed");
   }
 
