@@ -3,5 +3,7 @@
 
 # Ignore Node.js dependencies
 node_modules/
+frontend-next/node_modules/
+frontend-next/.next/
 .gitignore
 .env

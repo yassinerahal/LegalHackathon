@@ -1,6 +1,18 @@
-version: "3.8"
-
 services:
+  frontend_next:
+    build: ./frontend-next
+    container_name: nextact_frontend_next
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000/api
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend-next:/usr/src/app
+      - /usr/src/app/node_modules
+
   backend:
     build: ./backend
     container_name: nextact_backend

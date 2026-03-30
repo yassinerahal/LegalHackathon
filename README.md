@@ -87,4 +87,69 @@ http://localhost:4566/_localstack/health
 ````
 
 ### 4. Starting the Application
-(Add specific commands here once the backend and frontend scripts are finalized, e.g., npm run dev)
+
+The repository currently contains two frontend variants:
+
+- The legacy Vanilla JS frontend in the project root
+- The new Next.js App Router frontend in [frontend-next](/C:/Users/PC/Documents/UNI/6.Semester/LegalHackathon/LegalHackathon/frontend-next)
+
+#### Option A: Start the Next.js frontend locally
+
+Open a terminal in [frontend-next](/C:/Users/PC/Documents/UNI/6.Semester/LegalHackathon/LegalHackathon/frontend-next) and run:
+
+```bash
+npm install
+npm run dev -- --hostname 0.0.0.0 --port 3001
+```
+
+Then open:
+
+```bash
+http://localhost:3001
+```
+
+The Next.js client talks to the existing Express API on:
+
+```bash
+http://localhost:3000/api
+```
+
+If you want to recreate the Next.js app scaffold from scratch, the initialization command is:
+
+```bash
+npx create-next-app@latest frontend-next --ts --tailwind --app --use-npm --import-alias "@/*"
+```
+
+#### Option B: Start the full stack with Docker Compose
+
+The Compose file now includes:
+
+- `frontend_next` on port `3001`
+- `backend` on port `3000`
+- `postgres` on port `5432`
+- `localstack` on port `4566`
+
+Start everything with:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Then use:
+
+```bash
+http://localhost:3001
+```
+
+#### Frontend migration status
+
+The new Next.js frontend already includes:
+
+- JWT-based AuthContext with client-side session hydration
+- Protected routes for firm users and remote users
+- Dashboard, cases, clients, admin user management, and remote portal pages
+- Case detail placeholder drag-and-drop uploads using the existing Express API
+- Secure document download buttons that call the protected backend download route
+
+The backend API contract remains unchanged. The new client consumes the current Express JSON responses directly.
