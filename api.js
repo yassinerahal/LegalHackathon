@@ -1,9 +1,27 @@
 const API_BASE_URL = "http://localhost:3000/api";
 const STORED_SESSION_KEY = "nextact_current_user";
 const STORED_JWT_KEY = "nextact_jwt";
+const SUPPORTED_UPLOAD_EXTENSIONS = [
+  ".pdf",
+  ".xlsx",
+  ".xls",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".doc",
+  ".docx",
+  ".csv",
+  ".txt"
+];
+const SUPPORTED_UPLOAD_ACCEPT = SUPPORTED_UPLOAD_EXTENSIONS.join(",");
 
 function getApiUrl(path) {
   return `${API_BASE_URL}${path}`;
+}
+
+function isSupportedUploadFile(file) {
+  const fileName = String(file?.name || "").toLowerCase();
+  return SUPPORTED_UPLOAD_EXTENSIONS.some((extension) => fileName.endsWith(extension));
 }
 
 function getStoredSession() {

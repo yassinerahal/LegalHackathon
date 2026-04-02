@@ -49,9 +49,69 @@ let contextMenuFile = null;
 let availableAssignees = [];
 let assignedUsers = [];
 let selectedEditAssigneeIds = new Set();
+let detailToastTimeouts = new WeakMap();
 
 function requireSession() {
   return requireStaffSession();
+}
+
+function ensureDetailUploadInputHints() {
+  if (detailCaseDocuments) {
+    detailCaseDocuments.setAttribute("accept", SUPPORTED_UPLOAD_ACCEPT);
+  }
+}
+
+function getDetailToastRegion() {
+  let region = document.getElementById("toastRegion");
+  if (!region) {
+    region = document.createElement("div");
+    region.id = "toastRegion";
+    region.className = "toast-region";
+    region.setAttribute("aria-live", "polite");
+    region.setAttribute("aria-atomic", "true");
+    document.body.appendChild(region);
+  }
+  return region;
+}
+
+function showDetailToast(message, variant = "success") {
+  if (!message) return;
+  const region = getDetailToastRegion();
+  const toast = document.createElement("div");
+  toast.className = `toast-message ${variant}`;
+  toast.textContent = message;
+  region.appendChild(toast);
+
+  window.requestAnimationFrame(() => {
+    toast.classList.add("visible");
+  });
+
+  const timeoutId = window.setTimeout(() => {
+    toast.classList.remove("visible");
+    window.setTimeout(() => toast.remove(), 220);
+  }, 4200);
+
+  detailToastTimeouts.set(toast, timeoutId);
+  toast.addEventListener("click", () => {
+    window.clearTimeout(detailToastTimeouts.get(toast));
+    toast.classList.remove("visible");
+    window.setTimeout(() => toast.remove(), 220);
+  });
+}
+
+function splitDetailUploadFiles(files) {
+  const supportedFiles = [];
+  const unsupportedFiles = [];
+
+  Array.from(files || []).forEach((file) => {
+    if (isSupportedUploadFile(file)) {
+      supportedFiles.push(file);
+    } else {
+      unsupportedFiles.push(file.name || "Unknown file");
+    }
+  });
+
+  return { supportedFiles, unsupportedFiles };
 }
 
 function applyTheme(theme) {
@@ -382,14 +442,21 @@ function renderEditCaseTeamSelection(entry) {
 
 async function saveUploadedFilesToCase(files) {
   if (!currentCaseId || !files.length) return;
+  const { supportedFiles, unsupportedFiles } = splitDetailUploadFiles(files);
+  if (unsupportedFiles.length) {
+    showDetailToast(`Unsuccessful - ${unsupportedFiles.join(", ")}`, "error");
+  }
+  if (!supportedFiles.length) return;
   const cases = readCases();
   const caseIndex = cases.findIndex((entry) => entry.id === currentCaseId);
   if (caseIndex < 0) return;
 
   const currentDocs = normalizeUploadedDocuments(cases[caseIndex].uploadedDocuments);
   const existing = new Set(currentDocs.map((file) => file.name));
+  let successCount = 0;
+  const failedUploads = [];
 
-  for (const file of files) {
+  for (const file of supportedFiles) {
     if (!existing.has(file.name)) {
       try {
         const uploadData = await uploadFile(file);
@@ -411,9 +478,10 @@ async function saveUploadedFilesToCase(files) {
           uploadedAt: linkedDocument.uploaded_at || ""
         });
         existing.add(file.name);
+        successCount++;
       } catch (error) {
         console.error(`Network error uploading ${file.name}:`, error);
-        alert(error.message || `Failed to upload ${file.name}.`);
+        failedUploads.push(file.name);
       }
     }
   }
@@ -425,6 +493,12 @@ async function saveUploadedFilesToCase(files) {
   };
   writeCases(cases);
   renderCaseDetails(cases[caseIndex]);
+  if (successCount > 0) {
+    showDetailToast(`Successful (${successCount})`, "success");
+  }
+  if (failedUploads.length) {
+    showDetailToast(`Unsuccessful - ${failedUploads.join(", ")}`, "error");
+  }
 }
 
 function renderCaseDetails(entry) {
@@ -1189,4 +1263,5 @@ async function initPage() {
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();
+ensureDetailUploadInputHints();
 initPage();

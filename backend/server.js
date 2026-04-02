@@ -30,6 +30,18 @@ if (!FILE_ENCRYPTION_KEY_HEX) {
 }
 
 const FILE_ENCRYPTION_KEY = Buffer.from(FILE_ENCRYPTION_KEY_HEX, "hex");
+const SUPPORTED_UPLOAD_EXTENSIONS = [
+  ".pdf",
+  ".xlsx",
+  ".xls",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".doc",
+  ".docx",
+  ".csv",
+  ".txt"
+];
 
 if (FILE_ENCRYPTION_KEY.length !== 32) {
   throw new Error("FILE_ENCRYPTION_KEY must be a 32-byte hex string.");
@@ -59,6 +71,11 @@ function decryptFileBuffer(buffer, encryptionIv, encryptionTag) {
   );
   decipher.setAuthTag(Buffer.from(encryptionTag, "hex"));
   return Buffer.concat([decipher.update(buffer), decipher.final()]);
+}
+
+function isSupportedUploadName(fileName = "") {
+  const lowerFileName = String(fileName).toLowerCase();
+  return SUPPORTED_UPLOAD_EXTENSIONS.some((extension) => lowerFileName.endsWith(extension));
 }
 
 async function readObjectBodyAsBuffer(body) {
@@ -589,6 +606,10 @@ app.post("/api/upload", requireStaffAuth, upload.single("document"), async (req,
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    if (!isSupportedUploadName(file.originalname)) {
+      return res.status(400).json({ error: `Unsupported file type: ${file.originalname}` });
     }
 
     await ensureStorageReady();

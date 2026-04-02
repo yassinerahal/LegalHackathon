@@ -79,9 +79,71 @@ let currentDocPlaceholders = [];
 let pendingQuickUploadFiles = [];
 let assignableCaseUsers = [];
 let selectedCaseAssigneeIds = new Set();
+let toastTimeouts = new WeakMap();
 const SESSION_KEY = "nextact_current_user";
 const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
+
+function ensureUploadInputHints() {
+  [quickUploadDocuments, caseDocuments].forEach((input) => {
+    if (input) {
+      input.setAttribute("accept", SUPPORTED_UPLOAD_ACCEPT);
+    }
+  });
+}
+
+function getToastRegion() {
+  let region = document.getElementById("toastRegion");
+  if (!region) {
+    region = document.createElement("div");
+    region.id = "toastRegion";
+    region.className = "toast-region";
+    region.setAttribute("aria-live", "polite");
+    region.setAttribute("aria-atomic", "true");
+    document.body.appendChild(region);
+  }
+  return region;
+}
+
+function showToast(message, variant = "success") {
+  if (!message) return;
+  const region = getToastRegion();
+  const toast = document.createElement("div");
+  toast.className = `toast-message ${variant}`;
+  toast.textContent = message;
+  region.appendChild(toast);
+
+  window.requestAnimationFrame(() => {
+    toast.classList.add("visible");
+  });
+
+  const timeoutId = window.setTimeout(() => {
+    toast.classList.remove("visible");
+    window.setTimeout(() => toast.remove(), 220);
+  }, 4200);
+
+  toastTimeouts.set(toast, timeoutId);
+  toast.addEventListener("click", () => {
+    window.clearTimeout(toastTimeouts.get(toast));
+    toast.classList.remove("visible");
+    window.setTimeout(() => toast.remove(), 220);
+  });
+}
+
+function splitUploadFiles(files) {
+  const supportedFiles = [];
+  const unsupportedFiles = [];
+
+  Array.from(files || []).forEach((file) => {
+    if (isSupportedUploadFile(file)) {
+      supportedFiles.push(file);
+    } else {
+      unsupportedFiles.push(file.name || "Unknown file");
+    }
+  });
+
+  return { supportedFiles, unsupportedFiles };
+}
 
 function requireSession() {
   return requireStaffSession();
@@ -163,6 +225,7 @@ async function initDashboard() {
   if (!session) return;
   applyTheme(readTheme());
   renderLoggedInUser();
+  ensureUploadInputHints();
   if (newCaseMainBtn) {
     newCaseMainBtn.hidden = !canCreateCases(session);
   }
@@ -473,7 +536,11 @@ function renderQuickUploadCaseOptions() {
 }
 
 function openAssignUploadModal(files) {
-  pendingQuickUploadFiles = Array.from(files || []);
+  const { supportedFiles, unsupportedFiles } = splitUploadFiles(files);
+  pendingQuickUploadFiles = supportedFiles;
+  if (unsupportedFiles.length) {
+    showToast(`Unsuccessful - ${unsupportedFiles.join(", ")}`, "error");
+  }
   if (!pendingQuickUploadFiles.length) return;
   renderQuickUploadCaseOptions();
   if (!assignUploadCaseSelect.options.length) {
@@ -580,11 +647,14 @@ async function uploadPendingFilesToCase() {
   render();
 
   quickUploadDocuments.value = "";
-  quickUploadStatus.textContent =
-    successCount > 0
-      ? `${successCount} file(s) uploaded successfully.${failedUploads.length ? ` Failed: ${failedUploads.join(", ")}` : ""}`
-      : "No files were uploaded.";
+  quickUploadStatus.textContent = successCount > 0 ? `${successCount} file(s) uploaded.` : "No files were uploaded.";
   quickUploadStatus.className = successCount > 0 ? "field-note success" : "field-note error";
+  if (successCount > 0) {
+    showToast(`Successful (${successCount})`, "success");
+  }
+  if (failedUploads.length) {
+    showToast(`Unsuccessful - ${failedUploads.join(", ")}`, "error");
+  }
   pendingQuickUploadFiles = [];
   
   setTimeout(() => assignUploadModal.close(), 1500);
