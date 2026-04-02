@@ -30,6 +30,17 @@ function formatPortalDate(value) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+function isPortalDeadlineSoon(value) {
+  if (!value) return false;
+  const dueDate = new Date(value);
+  if (Number.isNaN(dueDate.getTime())) return false;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDue = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const diffDays = Math.round((startOfDue.getTime() - startOfToday.getTime()) / 86400000);
+  return diffDays >= 0 && diffDays <= 3;
+}
+
 function renderEmptyState(listElement, title, description) {
   listElement.innerHTML = `
     <li>
@@ -91,12 +102,16 @@ function renderDeadlines(cases) {
     .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
     .forEach((entry) => {
       const li = document.createElement("li");
+      const isSoon = isPortalDeadlineSoon(entry.deadline);
       li.innerHTML = `
         <div>
-          <strong>${entry.name}</strong>
+          <strong class="meta-with-icon">
+            ${isSoon ? '<img src="icons/warning-urgent-icon.svg" alt="" aria-hidden="true" />' : '<img src="icons/deadline-list-icon.svg" alt="" aria-hidden="true" />'}
+            ${entry.name}
+          </strong>
           <p class="meta">Due: ${formatPortalDate(entry.deadline)}</p>
         </div>
-        <span class="badge success">Upcoming</span>
+        <span class="badge ${isSoon ? "" : "success"}">${isSoon ? "Due Soon" : "Upcoming"}</span>
       `;
       remoteDeadlinesList.appendChild(li);
     });

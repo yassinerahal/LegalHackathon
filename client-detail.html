@@ -20,7 +20,7 @@
         <span id="loggedInUserName" class="header-user"></span>
         <button id="goDashboardBtn" type="button" class="icon-btn" title="Dashboard" aria-label="Dashboard">⏱</button>
         <button id="toggleDarkModeBtn" type="button" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
-        <button id="billingBtn" type="button" class="icon-btn" title="Go to billing page" aria-label="Go to billing page">$</button>
+        <button id="billingBtn" type="button" class="icon-btn" title="Go to billing page" aria-label="Go to billing page"><img src="icons/billing-receipt-icon.svg" alt="" aria-hidden="true" /></button>
         <button id="logoutBtn" type="button" class="icon-btn" title="Log out" aria-label="Log out">⇥</button>
       </div>
     </header>
@@ -28,7 +28,7 @@
     <main class="container">
       <section class="panel">
         <div class="panel-head">
-          <h3 id="clientTitle">Client Settings</h3>
+          <h3 id="clientTitle" class="title-with-icon"><img src="icons/client-person-icon.svg" alt="" aria-hidden="true" />Client Settings</h3>
         </div>
         <form id="clientSettingsForm" class="modal-form client-settings-form">
           <label for="clientFullName">Name</label>
@@ -65,7 +65,7 @@
 
       <section id="relatedCasesSection" class="panel">
         <div class="panel-head">
-          <h3>Related Cases</h3>
+          <h3 class="title-with-icon"><img src="icons/clients-group-icon.svg" alt="" aria-hidden="true" />Related Cases</h3>
         </div>
         <ul id="relatedCasesList" class="list"></ul>
       </section>

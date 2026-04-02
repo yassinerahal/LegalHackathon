@@ -58,8 +58,8 @@ async function renderClients() {
       li.dataset.clientId = client.id;
       li.classList.add("case-row-clickable");
       li.innerHTML = `
-        <div>
-          <strong>${client.full_name}</strong>
+        <div class="client-row-main">
+          <strong class="meta-with-icon"><img src="icons/client-person-icon.svg" alt="" aria-hidden="true" />${client.full_name}</strong>
           <p class="meta">
             ${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}
           </p>

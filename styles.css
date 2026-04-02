@@ -141,6 +141,12 @@ body.dark-mode .gtranslate_wrapper .gt_selector {
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
+.icon-btn img {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
 .icon-btn:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--primary) 35%, var(--line-strong) 65%);
@@ -303,6 +309,57 @@ body.dark-mode .brand-copy p {
 .panel-head h3 {
   margin: 0;
   font-size: 1.14rem;
+}
+
+.title-with-icon,
+.meta-with-icon,
+.warning-with-icon,
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.58rem;
+}
+
+.title-with-icon img,
+.meta-with-icon img,
+.warning-with-icon img,
+.btn-with-icon img {
+  display: block;
+}
+
+.title-with-icon img {
+  width: 1.08rem;
+  height: 1.08rem;
+  color: var(--primary);
+}
+
+.meta-with-icon img {
+  width: 1rem;
+  height: 1rem;
+  color: color-mix(in srgb, var(--primary) 78%, #203458 22%);
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+}
+
+.client-row-main {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.warning-with-icon {
+  gap: 0.38rem;
+  color: #b26a00;
+  font-weight: 700;
+}
+
+.warning-with-icon img {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.btn-with-icon img {
+  width: 1rem;
+  height: 1rem;
 }
 
 .calendar-controls {
@@ -688,6 +745,10 @@ textarea {
 
 .field-note.success {
   color: #0b7d4d;
+}
+
+.field-note.warning {
+  color: #b26a00;
 }
 
 .toast-region {

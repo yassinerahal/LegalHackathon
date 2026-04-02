@@ -65,6 +65,10 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
+function setClientTitle(name) {
+  clientTitle.innerHTML = `<img src="icons/client-person-icon.svg" alt="" aria-hidden="true" />${name} Settings`;
+}
+
 function updateRemoteAccessAvailability(client) {
   const hasEmail = Boolean(client.email && String(client.email).trim());
   grantRemoteAccessBtn.disabled = !hasEmail;
@@ -75,7 +79,7 @@ function updateRemoteAccessAvailability(client) {
 }
 
 function renderClientPage(client, relatedCases, relatedCasesError = "") {
-  clientTitle.textContent = `${client.full_name} Settings`;
+  setClientTitle(client.full_name);
   clientFullName.value = client.full_name || "";
   clientAddress.value = client.address || "";
   clientEmail.value = client.email || "";
@@ -155,7 +159,7 @@ async function handleSaveClient(event) {
       state: clientState.value.trim()
     });
 
-    clientTitle.textContent = `${updatedClient.full_name} Settings`;
+    setClientTitle(updatedClient.full_name);
     clientInfo.textContent = "Client details saved successfully.";
     clientInfo.className = "field-note success";
     updateRemoteAccessAvailability(updatedClient);
