@@ -52,6 +52,10 @@ body.dark-mode {
   --success-soft: rgba(15, 159, 99, 0.16);
   --shadow-soft: 0 20px 40px rgba(3, 8, 18, 0.32);
   --shadow-card: 0 28px 64px rgba(0, 0, 0, 0.3);
+  background:
+    radial-gradient(circle at top left, rgba(73, 96, 150, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(52, 87, 213, 0.14), transparent 24%),
+    linear-gradient(180deg, #09111d 0%, #0d1422 48%, #101a2b 100%);
 }
 
 body::before {
@@ -63,6 +67,187 @@ body::before {
     radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.34), transparent 18%),
     radial-gradient(circle at 82% 24%, rgba(180, 201, 245, 0.16), transparent 22%);
   opacity: 0.95;
+}
+
+body.dark-mode::before {
+  background:
+    radial-gradient(circle at 18% 14%, rgba(114, 141, 201, 0.12), transparent 18%),
+    radial-gradient(circle at 82% 18%, rgba(52, 87, 213, 0.12), transparent 22%);
+  opacity: 0.72;
+}
+
+body.dark-mode > .min-h-screen {
+  background:
+    radial-gradient(circle at top, rgba(24, 35, 56, 0.95), rgba(9, 17, 29, 0.92) 42%, rgba(7, 12, 22, 0.98) 100%) !important;
+}
+
+body.dark-mode header.border-b,
+body.dark-mode .topbar {
+  background: rgba(9, 16, 28, 0.88) !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.32);
+}
+
+body.dark-mode nav.rounded-2xl {
+  background: rgba(18, 28, 45, 0.94) !important;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+body.dark-mode nav.rounded-2xl a {
+  color: var(--muted) !important;
+}
+
+body.dark-mode nav.rounded-2xl a:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--text) !important;
+}
+
+body.dark-mode nav.rounded-2xl a.bg-indigo-50,
+body.dark-mode nav.rounded-2xl a[class*="bg-indigo-50"] {
+  background: rgba(52, 87, 213, 0.22) !important;
+  color: #dfe7ff !important;
+  box-shadow: inset 0 0 0 1px rgba(104, 130, 219, 0.18);
+}
+
+body.dark-mode .hidden.text-right span:first-child,
+body.dark-mode #loggedInUserName.block {
+  color: var(--text) !important;
+}
+
+body.dark-mode .hidden.text-right span:last-child {
+  color: #8f9fbe !important;
+}
+
+body.dark-mode button.rounded-xl,
+body.dark-mode a.rounded-2xl,
+body.dark-mode button.rounded-2xl,
+body.dark-mode .btn-ghost {
+  background: rgba(17, 27, 43, 0.92) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-soft);
+}
+
+body.dark-mode button.rounded-xl:hover,
+body.dark-mode a.rounded-2xl:hover,
+body.dark-mode button.rounded-2xl:hover,
+body.dark-mode .btn-ghost:hover {
+  background: rgba(28, 42, 66, 0.96) !important;
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--line-strong) 72%) !important;
+}
+
+body.dark-mode .btn-primary,
+body.dark-mode .drop-zone-browse {
+  background: linear-gradient(180deg, #4f69ec, #314ac6) !important;
+  color: #fff !important;
+  border-color: rgba(79, 105, 236, 0.55) !important;
+}
+
+body.dark-mode .btn-primary:hover,
+body.dark-mode .drop-zone-browse:hover {
+  background: linear-gradient(180deg, #5f79ff, #3a56db) !important;
+}
+
+body.dark-mode .btn-primary img,
+body.dark-mode .drop-zone-browse img {
+  filter: brightness(0) invert(1);
+}
+
+body.dark-mode main section.rounded-\[28px\],
+body.dark-mode main article.rounded-\[24px\],
+body.dark-mode main article.rounded-\[28px\],
+body.dark-mode .panel,
+body.dark-mode .module-card,
+body.dark-mode .card {
+  background: var(--card) !important;
+  border-color: var(--line) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+body.dark-mode main h1,
+body.dark-mode main h2,
+body.dark-mode main h3,
+body.dark-mode main h4,
+body.dark-mode header h1 {
+  color: var(--text) !important;
+}
+
+body.dark-mode main p,
+body.dark-mode main .label,
+body.dark-mode main .meta,
+body.dark-mode main .field-note,
+body.dark-mode header p {
+  color: var(--muted) !important;
+}
+
+body.dark-mode .field-note.error {
+  color: #ff8e99 !important;
+}
+
+body.dark-mode .field-note.success {
+  color: #79e0b2 !important;
+}
+
+body.dark-mode .field-note.warning {
+  color: #f2c66d !important;
+}
+
+body.dark-mode .brand-copy p {
+  color: #d8b96c !important;
+}
+
+body.dark-mode .drop-zone,
+body.dark-mode #quickUploadDropZone,
+body.dark-mode #dropZone,
+body.dark-mode #detailDropZone {
+  background: rgba(17, 27, 43, 0.9) !important;
+  border-color: rgba(111, 129, 166, 0.4) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+body.dark-mode .drop-zone-title {
+  color: var(--text) !important;
+}
+
+body.dark-mode .drop-zone-subtitle,
+body.dark-mode .drop-zone-icon,
+body.dark-mode #quickUploadStatus {
+  color: var(--muted) !important;
+}
+
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea,
+body.dark-mode input[class*="bg-slate-50"],
+body.dark-mode textarea[class*="bg-slate-50"] {
+  background: rgba(11, 20, 34, 0.92) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+  color: #7d8ca8 !important;
+}
+
+body.dark-mode .list li:not(.case-row-clickable),
+body.dark-mode .doc-placeholder-item,
+body.dark-mode .doc-drop-file-item,
+body.dark-mode .assignment-selection-item {
+  background: rgba(17, 27, 43, 0.78);
+  border-color: var(--line);
+}
+
+body.dark-mode .badge {
+  background: rgba(52, 87, 213, 0.22);
+  color: #dfe7ff;
+}
+
+body.dark-mode .badge.success {
+  background: rgba(15, 159, 99, 0.18);
+  color: #79e0b2;
 }
 
 .topbar {
