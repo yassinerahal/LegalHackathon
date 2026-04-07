@@ -322,6 +322,22 @@ function getFileExtension(name) {
   return name.slice(dotIndex + 1).toUpperCase();
 }
 
+function getShortDisplayFileName(name) {
+  const safeName = String(name || "").trim();
+  if (!safeName) return "file";
+
+  const dotIndex = safeName.lastIndexOf(".");
+  const hasExtension = dotIndex > 0 && dotIndex < safeName.length - 1;
+  const extension = hasExtension ? safeName.slice(dotIndex) : "";
+  const baseName = hasExtension ? safeName.slice(0, dotIndex) : safeName;
+
+  if (baseName.length <= 10) {
+    return `${baseName}${extension}`;
+  }
+
+  return `${baseName.slice(0, 10)}...${extension}`;
+}
+
 function getFileIcon(filename) {
   const extension = getFileExtension(filename).toLowerCase();
   if (extension === "pdf") return "📄";
@@ -566,7 +582,7 @@ function renderCaseDetails(entry) {
       const card = document.createElement("button");
       card.type = "button";
       card.className =
-        "uploaded-file-box flex min-w-[220px] items-center gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
+        "uploaded-file-box rounded-[22px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
       card.draggable = true;
       card.dataset.fileName = file.name;
       card.dataset.previewUrl = file.previewUrl || "";
@@ -589,10 +605,10 @@ function renderCaseDetails(entry) {
         thumb.appendChild(label);
       }
       const name = document.createElement("div");
-      name.className = "min-w-0 flex-1";
+      name.className = "uploaded-file-copy";
+      name.title = file.name;
       name.innerHTML = `
-        <span class="uploaded-file-name block truncate text-sm font-semibold text-slate-700">${file.name}</span>
-        <span class="mt-1 block text-xs text-slate-400">${file.mimeType || "Uploaded document"}</span>
+        <span class="uploaded-file-name block text-sm font-semibold text-slate-700">${getShortDisplayFileName(file.name)}</span>
       `;
 
       card.appendChild(thumb);
@@ -619,12 +635,16 @@ function renderCaseDetails(entry) {
     requiredDocs.forEach((doc, index) => {
       const li = document.createElement("li");
       li.className =
-        "doc-placeholder-item grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_auto] xl:items-start";
+        "doc-placeholder-item rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm";
+
+      const content = document.createElement("div");
+      content.className = "doc-placeholder-main";
 
       const label = document.createElement("div");
+      label.className = "doc-placeholder-label";
       label.innerHTML = `
-        <p class="text-lg font-semibold text-slate-800">${doc.name}</p>
-        <p class="mt-2 text-sm text-slate-500">${doc.status}</p>
+        <p class="doc-placeholder-title text-lg font-semibold text-slate-800">${doc.name}</p>
+        <p class="doc-placeholder-status mt-2 text-sm text-slate-500">${doc.status}</p>
       `;
 
       const dropField = document.createElement("div");
@@ -649,7 +669,7 @@ function renderCaseDetails(entry) {
           icon.textContent = getFileIcon(attachedFile.original_name || "");
 
           const fileName = document.createElement("span");
-          fileName.className = "doc-drop-file-name truncate text-sm font-medium text-slate-700";
+          fileName.className = "doc-drop-file-name text-sm font-medium text-slate-700";
           fileName.textContent = attachedFile.original_name;
 
           const downloadLink = document.createElement("a");
@@ -678,8 +698,9 @@ function renderCaseDetails(entry) {
         dropField.appendChild(dropHint);
       }
 
-      li.appendChild(label);
-      li.appendChild(dropField);
+      content.appendChild(label);
+      content.appendChild(dropField);
+      li.appendChild(content);
       if (canEditCurrentCase) {
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
