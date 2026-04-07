@@ -24,6 +24,7 @@ const caseAssignmentsList = document.getElementById("caseAssignmentsList");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
+const billingBtn = document.getElementById("billingBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const deleteCaseBtn = document.getElementById("deleteCaseBtn");
 const editCaseBtn = document.getElementById("editCaseBtn");
@@ -259,6 +260,43 @@ function removeFileFromCase(fileName) {
   renderCaseDetails(cases[index]);
 }
 
+async function removePlaceholderFromCase(placeholderId) {
+  const { cases, index } = getCurrentCaseAndIndex();
+  if (index < 0) return;
+
+  const placeholder = (cases[index].requiredDocuments || []).find(
+    (entry) => String(entry.id) === String(placeholderId)
+  );
+  if (!placeholder) return;
+
+  const confirmed = window.confirm(
+    "Remove this placeholder and delete all files attached to it from the database and storage?"
+  );
+  if (!confirmed) return;
+
+  try {
+    const result = await deleteCasePlaceholder(currentCaseId, placeholderId);
+    const deletedKeys = new Set((result.deleted_s3_keys || []).map((key) => String(key)));
+
+    cases[index] = {
+      ...cases[index],
+      requiredDocuments: (cases[index].requiredDocuments || []).filter(
+        (entry) => String(entry.id) !== String(placeholderId)
+      ),
+      uploadedDocuments: normalizeUploadedDocuments(cases[index].uploadedDocuments).filter(
+        (document) => !deletedKeys.has(String(document.s3Key || ""))
+      )
+    };
+
+    writeCases(cases);
+    renderCaseDetails(cases[index]);
+    showDetailToast("Placeholder and attached files deleted.", "success");
+  } catch (error) {
+    console.error("Failed to delete placeholder:", error);
+    window.alert(error.message || "Failed to delete placeholder.");
+  }
+}
+
 function parseClientNames(value) {
   const seen = new Set();
   return value
@@ -376,16 +414,18 @@ function renderCaseAssignments(entry) {
   caseAssignmentsList.innerHTML = "";
 
   if (!assignedUsers.length) {
-    caseAssignmentsList.innerHTML = '<li><p class="field-note">No additional users assigned yet.</p></li>';
+    caseAssignmentsList.innerHTML =
+      '<li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500"><p class="field-note">No additional users assigned yet.</p></li>';
     return;
   }
 
   assignedUsers.forEach((user) => {
     const li = document.createElement("li");
+    li.className = "grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm";
     li.innerHTML = `
       <div>
-        <strong>${user.full_name || user.username}</strong>
-        <p class="meta">${user.email} • ${user.role}</p>
+        <strong class="block text-lg font-semibold text-slate-800">${user.full_name || user.username}</strong>
+        <p class="mt-2 text-sm text-slate-500">${user.email} • ${user.role}</p>
       </div>
     `;
     caseAssignmentsList.appendChild(li);
@@ -412,9 +452,9 @@ function renderEditCaseTeamSelection(entry) {
 
   const fixedMarkup = fixedOwner
     ? `
-      <div class="assignment-selection-item assignment-selection-item-fixed">
-        <input type="checkbox" checked disabled />
-        <span>${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
+      <div class="assignment-selection-item assignment-selection-item-fixed flex items-center gap-3 rounded-[22px] border border-dashed border-indigo-200 bg-indigo-50/70 px-4 py-4">
+        <input type="checkbox" checked disabled class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+        <span class="text-sm font-medium text-slate-700">${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
       </div>
     `
     : "";
@@ -422,14 +462,15 @@ function renderEditCaseTeamSelection(entry) {
   const selectableMarkup = eligibleUsers
     .map(
       (user) => `
-        <label class="assignment-selection-item">
+        <label class="assignment-selection-item flex items-center gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <input
             type="checkbox"
             data-edit-case-assignee
             value="${user.id}"
             ${selectedEditAssigneeIds.has(String(user.id)) ? "checked" : ""}
+            class="h-4 w-4 rounded border-slate-300 text-indigo-600"
           />
-          <span>${user.full_name || user.username} (${user.role})</span>
+          <span class="text-sm font-medium text-slate-700">${user.full_name || user.username} (${user.role})</span>
         </label>
       `
     )
@@ -516,14 +557,16 @@ function renderCaseDetails(entry) {
   const uploadedDocs = normalizeUploadedDocuments(entry.uploadedDocuments);
   uploadedDocumentsGrid.innerHTML = "";
   if (!uploadedDocs.length) {
-    uploadedDocumentsGrid.innerHTML = '<p class="field-note">No uploaded documents.</p>';
+    uploadedDocumentsGrid.innerHTML =
+      '<div class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500">No uploaded documents.</div>';
     detailFileCount.textContent = "No files uploaded for this case.";
   } else {
     detailFileCount.textContent = `${uploadedDocs.length} uploaded file(s) in this case.`;
     uploadedDocs.forEach((file) => {
       const card = document.createElement("button");
       card.type = "button";
-      card.className = "uploaded-file-box";
+      card.className =
+        "uploaded-file-box flex min-w-[220px] items-center gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
       card.draggable = true;
       card.dataset.fileName = file.name;
       card.dataset.previewUrl = file.previewUrl || "";
@@ -545,16 +588,20 @@ function renderCaseDetails(entry) {
         label.textContent = getFileExtension(file.name);
         thumb.appendChild(label);
       }
-      const name = document.createElement("span");
-      name.className = "uploaded-file-name";
-      name.textContent = file.name;
+      const name = document.createElement("div");
+      name.className = "min-w-0 flex-1";
+      name.innerHTML = `
+        <span class="uploaded-file-name block truncate text-sm font-semibold text-slate-700">${file.name}</span>
+        <span class="mt-1 block text-xs text-slate-400">${file.mimeType || "Uploaded document"}</span>
+      `;
 
       card.appendChild(thumb);
       card.appendChild(name);
       if (canEditCurrentCase) {
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
-        removeBtn.className = "uploaded-file-remove";
+        removeBtn.className =
+          "uploaded-file-remove ml-auto flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-500";
         removeBtn.dataset.removeFileName = file.name;
         removeBtn.textContent = "x";
         card.appendChild(removeBtn);
@@ -566,39 +613,48 @@ function renderCaseDetails(entry) {
   requiredDocsList.innerHTML = "";
   const requiredDocs = entry.requiredDocuments || [];
   if (!requiredDocs.length) {
-    requiredDocsList.innerHTML = '<li class="doc-placeholder-item"><p>No required placeholders.</p></li>';
+    requiredDocsList.innerHTML =
+      '<li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500"><p>No required placeholders.</p></li>';
   } else {
     requiredDocs.forEach((doc, index) => {
       const li = document.createElement("li");
-      li.className = "doc-placeholder-item";
+      li.className =
+        "doc-placeholder-item grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_auto] xl:items-start";
 
-      const label = document.createElement("p");
-      label.textContent = `${doc.name} • ${doc.status}`;
+      const label = document.createElement("div");
+      label.innerHTML = `
+        <p class="text-lg font-semibold text-slate-800">${doc.name}</p>
+        <p class="mt-2 text-sm text-slate-500">${doc.status}</p>
+      `;
 
       const dropField = document.createElement("div");
-      dropField.className = "doc-drop-field";
+      dropField.className =
+        "doc-drop-field min-h-[120px] rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 transition";
       dropField.dataset.docDropIndex = String(index);
       if (Array.isArray(doc.attachedFiles) && doc.attachedFiles.length) {
         const attachedList = document.createElement("div");
-        attachedList.className = "doc-drop-file-list";
+        attachedList.className = "doc-drop-file-list flex flex-col gap-3";
 
         doc.attachedFiles.forEach((attachedFile) => {
           const fileRow = document.createElement("div");
-          fileRow.className = "doc-drop-file-item";
+          fileRow.className =
+            "doc-drop-file-item flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 shadow-sm";
 
           const fileMeta = document.createElement("div");
-          fileMeta.className = "doc-drop-file-meta";
+          fileMeta.className = "doc-drop-file-meta flex min-w-0 items-center gap-3";
 
           const icon = document.createElement("span");
-          icon.className = "doc-file-icon";
+          icon.className =
+            "doc-file-icon flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-xs font-semibold text-indigo-600";
           icon.textContent = getFileIcon(attachedFile.original_name || "");
 
           const fileName = document.createElement("span");
-          fileName.className = "doc-drop-file-name";
+          fileName.className = "doc-drop-file-name truncate text-sm font-medium text-slate-700";
           fileName.textContent = attachedFile.original_name;
 
           const downloadLink = document.createElement("a");
-          downloadLink.className = "btn-ghost btn-small doc-download-link";
+          downloadLink.className =
+            "btn-ghost btn-small doc-download-link rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
           downloadLink.href = getDocumentDownloadUrl(attachedFile);
           downloadLink.textContent = "Download";
           downloadLink.dataset.s3Key = attachedFile.s3_key || "";
@@ -616,7 +672,8 @@ function renderCaseDetails(entry) {
 
       if (!doc.attachedFiles?.length) {
         const dropHint = document.createElement("p");
-        dropHint.className = "doc-drop-hint";
+        dropHint.className =
+          "doc-drop-hint flex min-h-[88px] items-center justify-center text-center text-sm text-slate-400";
         dropHint.textContent = "Drop uploaded files or local files here";
         dropField.appendChild(dropHint);
       }
@@ -626,8 +683,9 @@ function renderCaseDetails(entry) {
       if (canEditCurrentCase) {
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
-        removeBtn.className = "btn-ghost btn-small";
-        removeBtn.dataset.removeDocIndex = String(index);
+        removeBtn.className =
+          "btn-ghost btn-small h-fit rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+        removeBtn.dataset.removePlaceholderId = String(doc.id);
         removeBtn.textContent = "Remove";
         li.appendChild(removeBtn);
       }
@@ -818,6 +876,12 @@ async function handleDeleteCase() {
 goDashboardBtn.addEventListener("click", () => {
   window.location.href = "index.html";
 });
+
+if (billingBtn) {
+  billingBtn.addEventListener("click", () => {
+    window.location.href = "billing.html";
+  });
+}
 
 toggleDarkModeBtn.addEventListener("click", () => {
   const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
@@ -1054,20 +1118,9 @@ requiredDocsList.addEventListener("click", (event) => {
     return;
   }
 
-  const removeBtn = event.target.closest("[data-remove-doc-index]");
+  const removeBtn = event.target.closest("[data-remove-placeholder-id]");
   if (!removeBtn) return;
-  const placeholderIndex = Number(removeBtn.dataset.removeDocIndex);
-  if (Number.isNaN(placeholderIndex)) return;
-  const { cases, index } = getCurrentCaseAndIndex();
-  if (index < 0) return;
-  const required = [...(cases[index].requiredDocuments || [])];
-  required.splice(placeholderIndex, 1);
-  cases[index] = {
-    ...cases[index],
-    requiredDocuments: required
-  };
-  writeCases(cases);
-  renderCaseDetails(cases[index]);
+  removePlaceholderFromCase(removeBtn.dataset.removePlaceholderId);
 });
 
 detailAddDocPlaceholderBtn.addEventListener("click", addRequiredPlaceholder);

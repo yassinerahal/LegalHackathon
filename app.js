@@ -5,9 +5,7 @@ const state = {
   cases: [],
   deadlines: [],
   clients: [],
-  documents: 0,
-  pendingUsers: [],
-  allUsers: []
+  documents: 0
 };
 
 const dashboardMain = document.querySelector(".dashboard-main");
@@ -22,9 +20,6 @@ const calendarBtn = document.getElementById("calendarBtn");
 const viewAllCasesBtn = document.getElementById("viewAllCasesBtn");
 const viewAllClientsBtn = document.getElementById("viewAllClientsBtn");
 const newCaseMainBtn = document.getElementById("newCaseMainBtn");
-const adminMainCard = document.getElementById("adminMainCard");
-const adminPendingCount = document.getElementById("adminPendingCount");
-const openAdminPanelBtn = document.getElementById("openAdminPanelBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const quickUploadDropZone = document.getElementById("quickUploadDropZone");
 const quickUploadDocuments = document.getElementById("quickUploadDocuments");
@@ -229,17 +224,10 @@ async function initDashboard() {
   if (newCaseMainBtn) {
     newCaseMainBtn.hidden = !canCreateCases(session);
   }
-  if (adminMainCard) {
-    adminMainCard.classList.toggle("hidden", session.role !== "admin");
-  }
-
   try {
     const requests = [getCases(), getClients()];
     if (session.role === "admin" || session.role === "lawyer") {
       requests.push(getAssignableUsers());
-    }
-    if (session.role === "admin") {
-      requests.push(getPendingUsers(), getAllUsers());
     }
 
     const responses = await Promise.all(requests);
@@ -247,8 +235,6 @@ async function initDashboard() {
     const clients = responses.shift() || [];
     const assignableUsers =
       session.role === "admin" || session.role === "lawyer" ? responses.shift() || [] : [];
-    const pendingUsers = session.role === "admin" ? responses.shift() || [] : [];
-    const allUsers = session.role === "admin" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
     const caseDocumentsById = new Map();
     const documentResults = await Promise.allSettled(
@@ -300,8 +286,6 @@ async function initDashboard() {
         title: `${entry.title} deadline`,
         date: entry.deadline
       }));
-    state.pendingUsers = Array.isArray(pendingUsers) ? pendingUsers : [];
-    state.allUsers = Array.isArray(allUsers) ? allUsers : [];
     assignableCaseUsers = Array.isArray(assignableUsers) ? assignableUsers : [];
     writeStoredCases(state.cases);
     render();
@@ -386,10 +370,20 @@ function renderStats() {
 
 function renderCases() {
   caseList.innerHTML = "";
+  if (!state.cases.length) {
+    caseList.innerHTML = `
+      <li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500">
+        No cases available yet. Create a case to get started.
+      </li>
+    `;
+    return;
+  }
+
   state.cases.forEach((entry) => {
     const li = document.createElement("li");
     li.dataset.caseId = entry.id;
-    li.classList.add("case-row-clickable");
+    li.className =
+      "case-row-clickable grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
     const newestComments = (entry.comments || []).slice(0, 2);
     const requiredDocs = entry.requiredDocuments || [];
     const pendingCount = requiredDocs.filter((doc) => doc.status === "Pending").length;
@@ -402,14 +396,25 @@ function renderCases() {
     const badgeClass = entry.status === "Finished" ? "badge success" : "badge";
 
     li.innerHTML = `
-      <div>
-        <strong>${entry.title}</strong>
-        <p class="meta">${entry.stage} • ${entry.clientNames.join(", ")}</p>
-        <p class="case-doc-status">Required docs: ${requiredDocs.length} • Pending: ${pendingCount} • Uploaded files: ${uploadedCount}</p>
-        ${commentMarkup}
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <strong class="block text-lg font-semibold text-slate-800">${entry.title}</strong>
+            <p class="mt-2 text-sm text-slate-500">${entry.stage}</p>
+          </div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2 text-xs font-medium text-slate-500">
+          <span class="rounded-full bg-slate-100 px-3 py-1">${entry.clientNames.join(", ") || "No client"}</span>
+          <span class="rounded-full bg-slate-100 px-3 py-1">Required docs: ${requiredDocs.length}</span>
+          <span class="rounded-full bg-slate-100 px-3 py-1">Pending: ${pendingCount}</span>
+          <span class="rounded-full bg-slate-100 px-3 py-1">Uploaded files: ${uploadedCount}</span>
+        </div>
+        <div class="mt-4 rounded-2xl bg-slate-50 px-4 py-3">
+          ${commentMarkup}
+        </div>
       </div>
-      <div class="case-actions">
-        <span class="${badgeClass}">${entry.status}</span>
+      <div class="case-actions flex items-start justify-end">
+        <span class="${badgeClass} rounded-full px-4 py-2 text-xs font-semibold ${entry.status === "Finished" ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"}">${entry.status}</span>
       </div>
     `;
     caseList.appendChild(li);
@@ -418,18 +423,29 @@ function renderCases() {
 
 function renderDeadlines() {
   deadlineList.innerHTML = "";
+  if (!state.deadlines.length) {
+    deadlineList.innerHTML = `
+      <li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500">
+        No upcoming deadlines right now.
+      </li>
+    `;
+    return;
+  }
   state.deadlines.forEach((entry) => {
     const li = document.createElement("li");
+    li.className = "grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm";
     const isSoon = isDeadlineSoon(entry.date);
     li.innerHTML = `
-      <div>
-        <strong class="meta-with-icon">
-          ${isSoon ? '<img src="icons/warning-urgent-icon.svg" alt="" aria-hidden="true" />' : '<img src="icons/deadline-list-icon.svg" alt="" aria-hidden="true" />'}
-          ${entry.title}
+      <div class="min-w-0">
+        <strong class="flex items-center gap-3 text-base font-semibold text-slate-800">
+          <span class="flex h-10 w-10 items-center justify-center rounded-2xl ${isSoon ? "bg-amber-100 text-amber-600" : "bg-indigo-100 text-indigo-600"}">
+            ${isSoon ? "!" : "•"}
+          </span>
+          <span class="truncate">${entry.title}</span>
         </strong>
-        <p class="meta">Due: ${formatDate(entry.date)}</p>
+        <p class="mt-2 text-sm text-slate-500">Due: ${formatDate(entry.date)}</p>
       </div>
-      <span class="badge ${isSoon ? "" : "success"}">${isSoon ? "Due Soon" : "Upcoming"}</span>
+      <span class="justify-self-start rounded-full px-4 py-2 text-xs font-semibold ${isSoon ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}">${isSoon ? "Due Soon" : "Upcoming"}</span>
     `;
     deadlineList.appendChild(li);
   });
@@ -442,6 +458,7 @@ function renderClients() {
 
   if (!state.clients.length) {
     const li = document.createElement("li");
+    li.className = "rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500";
     li.innerHTML = `
       <div>
         <strong>No clients yet.</strong>
@@ -456,15 +473,16 @@ function renderClients() {
     const clientCaseCount = state.cases.filter((entry) => Number(entry.client_id) === Number(client.id)).length;
     const li = document.createElement("li");
     li.dataset.clientId = client.id;
-    li.classList.add("case-row-clickable");
+    li.className =
+      "case-row-clickable grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
     li.innerHTML = `
-      <div class="client-row-main">
-        <strong class="meta-with-icon"><img src="icons/client-person-icon.svg" alt="" aria-hidden="true" />${client.name}</strong>
-        <p class="meta">
+      <div class="client-row-main min-w-0">
+        <strong class="block text-lg font-semibold text-slate-800">${client.name}</strong>
+        <p class="mt-2 text-sm text-slate-500">
           ${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}
         </p>
       </div>
-      <span class="badge">${clientCaseCount} case(s)</span>
+      <span class="justify-self-start rounded-full bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-600">${clientCaseCount} case(s)</span>
     `;
     clientList.appendChild(li);
   });
@@ -476,66 +494,6 @@ function render() {
   renderDeadlines();
   renderClients();
   renderQuickUploadCaseOptions();
-  renderAdminMainCard();
-  renderAdminPendingPanel();
-}
-
-function renderAdminMainCard() {
-  const session = getStoredSession();
-  if (!adminMainCard || session?.role !== "admin") return;
-  if (adminPendingCount) {
-    adminPendingCount.textContent = String(state.pendingUsers.length);
-  }
-}
-
-function renderAdminPendingPanel() {
-  const session = getStoredSession();
-  const existingPanel = document.getElementById("adminPendingPanel");
-  if (!dashboardMain || session?.role !== "admin") {
-    if (existingPanel) existingPanel.remove();
-    return;
-  }
-
-  const panel = existingPanel || document.createElement("section");
-  panel.id = "adminPendingPanel";
-  panel.className = "panel";
-
-  const listMarkup = state.allUsers.length
-    ? state.allUsers
-        .map(
-          (user) => `
-            <li class="admin-pending-item" data-user-id="${user.id}">
-              <div>
-                <strong>${user.full_name || user.username}</strong>
-                <p class="meta">${user.email} • ${user.is_approved ? "Approved" : "Pending"}</p>
-              </div>
-              <div class="admin-pending-actions">
-                <select data-user-role>
-                  <option value="lawyer" ${user.role === "lawyer" ? "selected" : ""}>Lawyer</option>
-                  <option value="assistant" ${user.role === "assistant" ? "selected" : ""}>Assistant</option>
-                  <option value="client" ${user.role === "client" ? "selected" : ""}>Client</option>
-                  <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
-                </select>
-                <button type="button" class="btn-primary" data-save-user-role>
-                  ${user.is_approved ? "Save Role" : "Approve"}
-                </button>
-              </div>
-            </li>
-          `
-        )
-        .join("")
-    : '<li><p class="field-note">No registered users found.</p></li>';
-
-  panel.innerHTML = `
-    <div class="panel-head">
-      <h3>User Management</h3>
-    </div>
-    <ul class="list">${listMarkup}</ul>
-  `;
-
-  if (!existingPanel) {
-    dashboardMain.appendChild(panel);
-  }
 }
 
 function renderQuickUploadCaseOptions() {
@@ -566,30 +524,6 @@ function openAssignUploadModal(files) {
   }
   assignUploadFileCount.textContent = `${pendingQuickUploadFiles.length} file(s) ready to upload.`;
   assignUploadModal.showModal();
-}
-
-async function handleSaveUserRoleClick(button) {
-  const item = button.closest("[data-user-id]");
-  if (!item) return;
-
-  const userId = item.dataset.userId;
-  const roleSelect = item.querySelector("[data-user-role]");
-  const selectedRole = roleSelect?.value || "lawyer";
-
-  try {
-    button.disabled = true;
-    const result = await updateUserRole(userId, selectedRole);
-    state.allUsers = state.allUsers.map((user) =>
-      String(user.id) === String(userId) ? result.user : user
-    );
-    state.pendingUsers = state.allUsers.filter((user) => !user.is_approved || user.role === "pending");
-    renderAdminMainCard();
-    renderAdminPendingPanel();
-  } catch (error) {
-    console.error("Failed to update user role:", error);
-    window.alert(error.message || "Failed to update user role.");
-    button.disabled = false;
-  }
 }
 
 // ==============================================================================
@@ -715,7 +649,7 @@ function renderDocPlaceholderList() {
   docPlaceholderList.innerHTML = "";
   if (!currentDocPlaceholders.length) {
     const li = document.createElement("li");
-    li.className = "doc-placeholder-item";
+    li.className = "rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500";
     li.innerHTML = "<p>No required document placeholders added.</p>";
     docPlaceholderList.appendChild(li);
     return;
@@ -723,37 +657,53 @@ function renderDocPlaceholderList() {
 
   currentDocPlaceholders.forEach((entry, index) => {
     const li = document.createElement("li");
-    li.className = "doc-placeholder-item";
+    li.className =
+      "doc-placeholder-item grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_auto] xl:items-start";
 
-    const label = document.createElement("p");
-    label.textContent = `${entry.name} • ${entry.status}`;
+    const label = document.createElement("div");
+    label.innerHTML = `
+      <p class="text-lg font-semibold text-slate-800">${entry.name}</p>
+      <p class="mt-2 text-sm text-slate-500">${entry.status}</p>
+    `;
 
     const dropField = document.createElement("div");
-    dropField.className = "doc-drop-field";
+    dropField.className =
+      "doc-drop-field min-h-[120px] rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 transition";
     dropField.dataset.docDropId = entry.id;
 
     const attachedFiles = Array.isArray(entry.attachedFiles) ? entry.attachedFiles : [];
 
     if (attachedFiles.length) {
       const attachedList = document.createElement("div");
-      attachedList.className = "doc-drop-file-list";
+      attachedList.className = "doc-drop-file-list flex flex-col gap-3";
 
       attachedFiles.forEach((attachedFile) => {
         const linkedFile = currentUploadedDocuments.find((file) => file.name === attachedFile.original_name);
-        const fileChip = document.createElement("span");
-        fileChip.className = "doc-drop-thumb-label";
-        fileChip.textContent = linkedFile?.name || attachedFile.original_name;
-        attachedList.appendChild(fileChip);
+        const fileCard = document.createElement("div");
+        fileCard.className = "flex items-center gap-3 rounded-2xl bg-white px-3 py-3 shadow-sm";
+        fileCard.innerHTML = `
+          <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-xs font-semibold text-indigo-600">${getFileExtension(linkedFile?.name || attachedFile.original_name)}</span>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-slate-700">${linkedFile?.name || attachedFile.original_name}</p>
+            <p class="text-xs text-slate-400">${attachedFile.mime_type || "Attached file"}</p>
+          </div>
+        `;
+        attachedList.appendChild(fileCard);
       });
 
       dropField.appendChild(attachedList);
     } else {
-      dropField.textContent = "Drop an uploaded file here";
+      dropField.innerHTML = `
+        <div class="flex h-full min-h-[88px] items-center justify-center text-center text-sm text-slate-400">
+          Drop an uploaded file here
+        </div>
+      `;
     }
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
-    removeBtn.className = "btn-ghost btn-small";
+    removeBtn.className =
+      "btn-ghost btn-small h-fit rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
     removeBtn.dataset.docRemove = String(index);
     removeBtn.textContent = "Remove";
 
@@ -796,7 +746,8 @@ function renderUploadedFileBoxes() {
   currentUploadedDocuments.forEach((file) => {
     const box = document.createElement("button");
     box.type = "button";
-    box.className = "uploaded-file-box";
+    box.className =
+      "uploaded-file-box flex min-w-[180px] items-center gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
     box.draggable = true;
     box.dataset.fileName = file.name;
 
@@ -816,12 +767,15 @@ function renderUploadedFileBoxes() {
       thumb.appendChild(typeLabel);
     }
 
-    const name = document.createElement("span");
-    name.className = "uploaded-file-name";
-    name.textContent = file.name;
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "min-w-0";
+    nameWrap.innerHTML = `
+      <span class="uploaded-file-name block truncate text-sm font-semibold text-slate-700">${file.name}</span>
+      <span class="mt-1 block text-xs text-slate-400">${file.mimeType || "Pending upload"}</span>
+    `;
 
     box.appendChild(thumb);
-    box.appendChild(name);
+    box.appendChild(nameWrap);
     uploadedFileBoxes.appendChild(box);
   });
 }
@@ -1056,9 +1010,9 @@ function renderCaseTeamSelection(entry = null) {
 
   const fixedMarkup = fixedOwner
     ? `
-      <div class="assignment-selection-item assignment-selection-item-fixed">
-        <input type="checkbox" checked disabled />
-        <span>${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
+      <div class="assignment-selection-item assignment-selection-item-fixed flex items-center gap-3 rounded-[22px] border border-dashed border-indigo-200 bg-indigo-50/70 px-4 py-4">
+        <input type="checkbox" checked disabled class="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+        <span class="text-sm font-medium text-slate-700">${fixedOwner.full_name || fixedOwner.username} (${fixedOwner.role}) • Case owner</span>
       </div>
     `
     : "";
@@ -1066,14 +1020,15 @@ function renderCaseTeamSelection(entry = null) {
   const selectableMarkup = eligibleUsers
     .map(
       (user) => `
-        <label class="assignment-selection-item">
+        <label class="assignment-selection-item flex items-center gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <input
             type="checkbox"
             data-case-assignee
             value="${user.id}"
             ${selectedCaseAssigneeIds.has(String(user.id)) ? "checked" : ""}
+            class="h-4 w-4 rounded border-slate-300 text-indigo-600"
           />
-          <span>${user.full_name || user.username} (${user.role})</span>
+          <span class="text-sm font-medium text-slate-700">${user.full_name || user.username} (${user.role})</span>
         </label>
       `
     )
@@ -1082,24 +1037,6 @@ function renderCaseTeamSelection(entry = null) {
   caseTeamList.innerHTML =
     fixedMarkup +
     (selectableMarkup || '<p class="field-note">No additional assistants or lawyers available.</p>');
-}
-
-if (dashboardMain) {
-  dashboardMain.addEventListener("click", (event) => {
-    const saveRoleBtn = event.target.closest("[data-save-user-role]");
-    if (saveRoleBtn) {
-      handleSaveUserRoleClick(saveRoleBtn);
-      return;
-    }
-
-    const openAdminBtn = event.target.closest("#openAdminPanelBtn");
-    if (!openAdminBtn) return;
-
-    const adminPanel = document.getElementById("adminPendingPanel");
-    if (adminPanel) {
-      adminPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
 }
 
 if (caseTeamList) {

@@ -5,6 +5,7 @@ const clientsList = document.getElementById("clientsList");
 const goDashboardBtn = document.getElementById("goDashboardBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
+const billingBtn = document.getElementById("billingBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 function requireSession() {
@@ -32,7 +33,8 @@ function renderLoggedInUser() {
 }
 
 async function renderClients() {
-  clientsList.innerHTML = "<li><div><strong>Loading clients...</strong></div></li>";
+  clientsList.innerHTML =
+    '<li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500"><div><strong>Loading clients...</strong></div></li>';
 
   try {
     const [clients, cases] = await Promise.all([getClients(), getCases()]);
@@ -41,10 +43,10 @@ async function renderClients() {
 
     if (!clients.length) {
       clientsList.innerHTML = `
-        <li>
+        <li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500">
           <div>
             <strong>No clients yet.</strong>
-            <p class="meta">Add a client from the case form.</p>
+            <p class="mt-2">Add a client from the case form.</p>
           </div>
         </li>
       `;
@@ -56,29 +58,30 @@ async function renderClients() {
 
       const li = document.createElement("li");
       li.dataset.clientId = client.id;
-      li.classList.add("case-row-clickable");
+      li.className =
+        "case-row-clickable grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
       li.innerHTML = `
-        <div class="client-row-main">
-          <strong class="meta-with-icon"><img src="icons/client-person-icon.svg" alt="" aria-hidden="true" />${client.full_name}</strong>
-          <p class="meta">
+        <div class="min-w-0">
+          <strong class="block text-lg font-semibold text-slate-800">${client.full_name}</strong>
+          <p class="mt-2 text-sm text-slate-500">
             ${client.address || "No address"} • ${client.email || "No email"} • ${client.phone || "No phone"}
           </p>
         </div>
-        <div class="case-actions">
-          <button type="button" class="btn-ghost btn-small" data-related-cases="${client.id}">
+        <div class="case-actions flex flex-wrap items-center justify-end gap-3">
+          <button type="button" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50" data-related-cases="${client.id}">
             View Related Cases
           </button>
-          <span class="badge">${caseCount} case(s)</span>
+          <span class="rounded-full bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-600">${caseCount} case(s)</span>
         </div>
       `;
       clientsList.appendChild(li);
     });
   } catch (error) {
     clientsList.innerHTML = `
-      <li>
+      <li class="rounded-[22px] border border-dashed border-rose-200 bg-rose-50/70 px-5 py-6 text-sm text-rose-600">
         <div>
           <strong>Failed to load clients.</strong>
-          <p class="meta">${error.message}</p>
+          <p class="mt-2">${error.message}</p>
         </div>
       </li>
     `;
@@ -101,6 +104,12 @@ clientsList.addEventListener("click", (event) => {
 goDashboardBtn.addEventListener("click", () => {
   window.location.href = "index.html";
 });
+
+if (billingBtn) {
+  billingBtn.addEventListener("click", () => {
+    window.location.href = "billing.html";
+  });
+}
 
 toggleDarkModeBtn.addEventListener("click", () => {
   const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";

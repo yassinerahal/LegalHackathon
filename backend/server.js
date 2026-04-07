@@ -5,7 +5,7 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const { GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
 const { requireAuth } = require("./middleware/auth");
 let QRCode = null;
@@ -112,6 +112,18 @@ async function placeholderBelongsToCase(caseId, placeholderId) {
     select: { id: true }
   });
   return Boolean(entry);
+}
+
+async function deleteStoredFileByKey(s3Key) {
+  if (!s3Key) return;
+
+  await ensureStorageReady();
+  await s3Client.send(
+    new DeleteObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key
+    })
+  );
 }
 
 // ---------------------------------------------------------
@@ -927,6 +939,104 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
   } catch (error) {
     console.error("Link placeholder error:", error);
     res.status(500).json({ error: "Failed to link placeholder" });
+  }
+});
+
+app.delete("/api/cases/:id/placeholders/:placeholderId", requireCaseEditAccess, async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    const placeholderId = req.params.placeholderId;
+
+    if (!/^\d+$/.test(String(caseId)) || !/^\d+$/.test(String(placeholderId))) {
+      return res.status(400).json({ error: "Invalid case or placeholder id" });
+    }
+
+    const placeholder = await prisma.casePlaceholder.findFirst({
+      where: {
+        id: Number(placeholderId),
+        case_id: Number(caseId)
+      }
+    });
+
+    if (!placeholder) {
+      return res.status(404).json({ error: "Placeholder not found for this case" });
+    }
+
+    const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
+    const attachedKeys = [
+      ...new Set(
+        attachedFiles
+          .map((file) => String(file?.s3_key || "").trim())
+          .filter(Boolean)
+      )
+    ];
+
+    const documentVersions = attachedKeys.length
+      ? await prisma.documentVersion.findMany({
+          where: {
+            s3_key: { in: attachedKeys },
+            document: {
+              case_id: Number(caseId)
+            }
+          },
+          select: {
+            id: true,
+            document_id: true,
+            s3_key: true
+          }
+        })
+      : [];
+
+    for (const version of documentVersions) {
+      await deleteStoredFileByKey(version.s3_key);
+    }
+
+    const deletedDocumentIds = [...new Set(documentVersions.map((version) => version.document_id))];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.casePlaceholder.delete({
+        where: { id: Number(placeholderId) }
+      });
+
+      if (documentVersions.length) {
+        await tx.documentVersion.deleteMany({
+          where: {
+            id: { in: documentVersions.map((version) => version.id) }
+          }
+        });
+
+        if (deletedDocumentIds.length) {
+          const remainingVersions = await tx.documentVersion.groupBy({
+            by: ["document_id"],
+            where: {
+              document_id: { in: deletedDocumentIds }
+            }
+          });
+
+          const remainingDocumentIds = new Set(remainingVersions.map((entry) => entry.document_id));
+          const orphanedDocumentIds = deletedDocumentIds.filter(
+            (documentId) => !remainingDocumentIds.has(documentId)
+          );
+
+          if (orphanedDocumentIds.length) {
+            await tx.document.deleteMany({
+              where: {
+                id: { in: orphanedDocumentIds }
+              }
+            });
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      placeholder_id: Number(placeholderId),
+      deleted_s3_keys: documentVersions.map((version) => version.s3_key)
+    });
+  } catch (error) {
+    console.error("Delete placeholder error:", error);
+    res.status(500).json({ error: "Failed to delete placeholder and attached files" });
   }
 });
 

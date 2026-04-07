@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NEXTACT - All Cases</title>
+    <title>NEXTACT - Users</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -33,21 +33,21 @@
 
           <nav class="hidden items-center gap-2 rounded-2xl bg-slate-100/90 px-4 py-2 md:flex">
             <a href="index.html" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Dashboard</a>
-            <a href="cases.html" class="rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 shadow-sm">Cases</a>
+            <a href="cases.html" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Cases</a>
             <a href="clients.html" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Clients</a>
-            <a href="users.html" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Users</a>
+            <a href="users.html" class="rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 shadow-sm">Users</a>
           </nav>
 
           <div class="flex items-center gap-3">
             <div class="gtranslate_wrapper"></div>
             <div class="hidden text-right md:block">
               <span id="loggedInUserName" class="block text-sm font-semibold text-slate-700"></span>
-              <span class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Workspace</span>
+              <span class="text-[11px] uppercase tracking-[0.2em] text-slate-400">Admin</span>
             </div>
-            <button id="goDashboardBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Dashboard" aria-label="Dashboard">Dashboard</button>
-            <button id="toggleDarkModeBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
-            <button id="billingBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Go to billing page" aria-label="Go to billing page">Billing</button>
-            <button id="logoutBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Log out" aria-label="Log out">Logout</button>
+            <button id="goDashboardBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50">Dashboard</button>
+            <button id="toggleDarkModeBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50">◐</button>
+            <button id="billingBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50">Billing</button>
+            <button id="logoutBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50">Logout</button>
           </div>
         </div>
       </header>
@@ -56,18 +56,19 @@
         <section class="rounded-[28px] border border-slate-200/70 bg-white/90 p-5 shadow-panel">
           <div class="mb-4 flex items-center justify-between gap-4">
             <div>
-              <h3 class="text-4xl font-light tracking-tight text-slate-800">All Cases</h3>
-              <p class="mt-2 text-sm text-slate-500">Review every accessible legal matter in one modern overview.</p>
+              <h3 class="text-4xl font-light tracking-tight text-slate-800">User Management</h3>
+              <p class="mt-2 text-sm text-slate-500">Approve registrations and update roles from one dedicated admin page.</p>
             </div>
             <a href="index.html" class="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Back to Dashboard</a>
           </div>
-          <ul id="allCasesList" class="list space-y-3"></ul>
+          <p id="usersStatus" class="mb-4 text-sm text-slate-500"></p>
+          <ul id="usersList" class="list space-y-3"></ul>
         </section>
       </main>
     </div>
 
     <script src="api.js"></script>
-    <script src="cases-page.js"></script>
+    <script src="users-page.js"></script>
     <script>
       window.gtranslateSettings = {
         default_language: "en",

@@ -290,6 +290,12 @@ async function getCasePlaceholders(caseId) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders`);
 }
 
+async function deleteCasePlaceholder(caseId, placeholderId) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders/${encodeURIComponent(placeholderId)}`, {
+    method: "DELETE"
+  });
+}
+
 async function linkPlaceholderToDocument(caseId, placeholderId, payload) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders/${encodeURIComponent(placeholderId)}/link`, {
     method: "PUT",
