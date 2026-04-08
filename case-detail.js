@@ -41,6 +41,11 @@ const editCaseTeamList = document.getElementById("editCaseTeamList");
 const finishCaseBtn = document.getElementById("finishCaseBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const saveEditBtn = document.getElementById("saveEditBtn");
+const placeholderHistoryModal = document.getElementById("placeholderHistoryModal");
+const placeholderHistoryTitle = document.getElementById("placeholderHistoryTitle");
+const placeholderHistorySubtitle = document.getElementById("placeholderHistorySubtitle");
+const placeholderHistoryTimeline = document.getElementById("placeholderHistoryTimeline");
+const closePlaceholderHistoryBtn = document.getElementById("closePlaceholderHistoryBtn");
 const fileContextMenu = document.getElementById("fileContextMenu");
 const ctxDownloadBtn = document.getElementById("ctxDownloadBtn");
 const ctxCopyBtn = document.getElementById("ctxCopyBtn");
@@ -52,6 +57,7 @@ let availableAssignees = [];
 let assignedUsers = [];
 let selectedEditAssigneeIds = new Set();
 let detailToastTimeouts = new WeakMap();
+let activeHistoryPlaceholderId = null;
 
 function requireSession() {
   return requireStaffSession();
@@ -187,7 +193,16 @@ function writeCases(cases) {
           id: document.id,
           name: document.name,
           status: document.status || "Pending",
-          attachedFiles: Array.isArray(document.attachedFiles) ? document.attachedFiles : []
+          versions: Array.isArray(document.versions)
+            ? document.versions
+            : Array.isArray(document.attachedFiles)
+              ? document.attachedFiles
+              : [],
+          attachedFiles: Array.isArray(document.attachedFiles)
+            ? document.attachedFiles
+            : Array.isArray(document.versions)
+              ? document.versions
+              : []
         })),
         uploadedDocuments: (entry.uploadedDocuments || []).map((document) => ({
           name: document.name,
@@ -245,11 +260,12 @@ function removeFileFromCase(fileName) {
     (file) => file.name !== fileName
   );
   const requiredDocuments = (cases[index].requiredDocuments || []).map((doc) => {
-    const attachedFiles = (doc.attachedFiles || []).filter((entry) => entry.original_name !== fileName);
+    const versions = getPlaceholderVersions(doc).filter((entry) => entry.original_name !== fileName);
     return {
       ...doc,
-      status: attachedFiles.length ? "Uploaded" : "Pending",
-      attachedFiles
+      status: versions.length ? "Uploaded" : "Pending",
+      versions,
+      attachedFiles: versions
     };
   });
   cases[index] = {
@@ -405,6 +421,142 @@ function normalizeUploadedDocuments(documents) {
           uploadedAt: item.uploadedAt || ""
         }
   );
+}
+
+function getPlaceholderVersions(placeholder) {
+  if (Array.isArray(placeholder?.versions)) {
+    return placeholder.versions;
+  }
+  if (Array.isArray(placeholder?.attachedFiles)) {
+    return placeholder.attachedFiles;
+  }
+  return [];
+}
+
+function normalizePlaceholder(placeholder) {
+  const versions = Array.isArray(placeholder?.versions)
+    ? placeholder.versions
+    : Array.isArray(placeholder?.attached_files)
+      ? placeholder.attached_files
+      : Array.isArray(placeholder?.attachedFiles)
+        ? placeholder.attachedFiles
+        : [];
+
+  return {
+    id: placeholder.id,
+    name: placeholder.name,
+    status: placeholder.status || (versions.length ? "Uploaded" : "Pending"),
+    versions,
+    attachedFiles: versions
+  };
+}
+
+function formatHistoryDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.toLocaleString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  })} Uhr`;
+}
+
+function getHistoryVersionLabel(index, total) {
+  if (index === 0) return "Original Version";
+  if (index === total - 1) return "Aktuelle Version";
+  return `Revision ${index}`;
+}
+
+function renderPlaceholderHistoryTimeline(versions) {
+  if (!placeholderHistoryTimeline) return;
+  if (!versions.length) {
+    placeholderHistoryTimeline.innerHTML =
+      '<div class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">No version history available for this placeholder.</div>';
+    return;
+  }
+
+  placeholderHistoryTimeline.innerHTML = "";
+
+  const list = document.createElement("div");
+  list.className = "relative ml-4 border-l-2 border-slate-200 pl-8";
+
+  versions.forEach((version, index) => {
+    const isLatest = index === versions.length - 1;
+    const item = document.createElement("article");
+    item.className = "relative mb-6 last:mb-0";
+
+    const node = document.createElement("span");
+    node.className = isLatest
+      ? "absolute -left-[41px] top-6 flex h-6 w-6 items-center justify-center rounded-full border-4 border-indigo-100 bg-indigo-600 shadow-md"
+      : "absolute -left-[39px] top-6 flex h-5 w-5 items-center justify-center rounded-full border-4 border-white bg-slate-300 shadow-sm";
+
+    const card = document.createElement("div");
+    card.className = isLatest
+      ? "rounded-[24px] border border-indigo-200 bg-indigo-50/50 p-5 shadow-md shadow-indigo-100/60"
+      : "rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm";
+
+    card.innerHTML = `
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] ${isLatest ? "text-indigo-600" : "text-slate-400"}">${getHistoryVersionLabel(index, versions.length)}</p>
+          <h4 class="mt-2 break-words text-lg font-semibold text-slate-800">${version.original_name || "Unnamed file"}</h4>
+          <p class="mt-2 text-sm text-slate-500">${formatHistoryDateTime(version.uploaded_at)}</p>
+        </div>
+        <button type="button" class="history-download-btn rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50" data-history-s3-key="${version.s3_key || ""}" data-history-file-name="${version.original_name || "file"}">Download</button>
+      </div>
+    `;
+
+    item.appendChild(node);
+    item.appendChild(card);
+    list.appendChild(item);
+  });
+
+  placeholderHistoryTimeline.appendChild(list);
+}
+
+async function openPlaceholderHistory(placeholderId) {
+  if (!placeholderId) return;
+
+  const { cases, index } = getCurrentCaseAndIndex();
+  const placeholder = index >= 0
+    ? (cases[index].requiredDocuments || []).find((entry) => String(entry.id) === String(placeholderId))
+    : null;
+
+  try {
+    activeHistoryPlaceholderId = placeholderId;
+    if (placeholderHistoryTitle) {
+      placeholderHistoryTitle.textContent = placeholder?.name
+        ? `History: ${placeholder.name}`
+        : "Version History";
+    }
+    if (placeholderHistorySubtitle) {
+      placeholderHistorySubtitle.textContent = "Chronological overview of all uploaded versions for this placeholder.";
+    }
+    renderPlaceholderHistoryTimeline([]);
+    if (!placeholderHistoryModal.open) {
+      placeholderHistoryModal.showModal();
+    }
+
+    const history = await getPlaceholderHistory(placeholderId);
+    const normalizedHistory = Array.isArray(history) ? history : [];
+    if (placeholderHistorySubtitle) {
+      placeholderHistorySubtitle.textContent = `${normalizedHistory.length} version(s), oldest first.`;
+    }
+    renderPlaceholderHistoryTimeline(normalizedHistory);
+  } catch (error) {
+    console.error("Failed to load placeholder history:", error);
+    if (placeholderHistoryTimeline) {
+      placeholderHistoryTimeline.innerHTML = `
+        <div class="rounded-[22px] border border-red-200 bg-red-50 px-5 py-8 text-sm text-red-700">
+          ${error.message || "Failed to load placeholder history."}
+        </div>
+      `;
+    }
+  }
 }
 
 function renderCaseAssignments(entry) {
@@ -634,6 +786,7 @@ function renderCaseDetails(entry) {
       '<li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500"><p>No required placeholders.</p></li>';
   } else {
     requiredDocs.forEach((doc, index) => {
+      const versions = getPlaceholderVersions(doc);
       const li = document.createElement("li");
       li.className =
         "doc-placeholder-item rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm";
@@ -652,11 +805,11 @@ function renderCaseDetails(entry) {
       dropField.className =
         "doc-drop-field min-h-[120px] rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 transition";
       dropField.dataset.docDropIndex = String(index);
-      if (Array.isArray(doc.attachedFiles) && doc.attachedFiles.length) {
+      if (versions.length) {
         const attachedList = document.createElement("div");
         attachedList.className = "doc-drop-file-list flex flex-col gap-3";
 
-        doc.attachedFiles.forEach((attachedFile) => {
+        versions.forEach((attachedFile) => {
           const fileRow = document.createElement("div");
           fileRow.className =
             "doc-drop-file-item flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 shadow-sm";
@@ -691,7 +844,7 @@ function renderCaseDetails(entry) {
         dropField.appendChild(attachedList);
       }
 
-      if (!doc.attachedFiles?.length) {
+      if (!versions.length) {
         const dropHint = document.createElement("p");
         dropHint.className =
           "doc-drop-hint flex min-h-[88px] items-center justify-center text-center text-sm text-slate-400";
@@ -701,6 +854,17 @@ function renderCaseDetails(entry) {
 
       content.appendChild(label);
       content.appendChild(dropField);
+
+      if (versions.length > 1) {
+        const historyBtn = document.createElement("button");
+        historyBtn.type = "button";
+        historyBtn.className =
+          "mt-4 inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+        historyBtn.dataset.historyPlaceholderId = String(doc.id);
+        historyBtn.innerHTML = '<span aria-hidden="true">⏱</span><span>History</span>';
+        content.appendChild(historyBtn);
+      }
+
       li.appendChild(content);
       if (canEditCurrentCase) {
         const removeBtn = document.createElement("button");
@@ -767,12 +931,7 @@ async function addRequiredPlaceholder() {
     const currentRequired = [...(cases[index].requiredDocuments || [])];
 
     created.forEach((placeholder) => {
-      currentRequired.push({
-        id: placeholder.id,
-        name: placeholder.name,
-        status: placeholder.status || "Pending",
-        attachedFiles: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
-      });
+      currentRequired.push(normalizePlaceholder(placeholder));
     });
 
     cases[index] = {
@@ -813,9 +972,7 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
 
     required[placeholderIndex] = {
       ...required[placeholderIndex],
-      id: updatedPlaceholder.id,
-      status: updatedPlaceholder.status || "Uploaded",
-      attachedFiles: Array.isArray(updatedPlaceholder.attached_files) ? updatedPlaceholder.attached_files : []
+      ...normalizePlaceholder(updatedPlaceholder)
     };
     cases[index] = {
       ...cases[index],
@@ -1066,7 +1223,7 @@ requiredDocsList.addEventListener("drop", (event) => {
 
         for (const droppedFile of droppedFiles) {
           const uploadData = await uploadFile(droppedFile);
-          const linkedDocument = await linkCaseDocument(currentCaseId, {
+          const placeholderUploadResult = await uploadPlaceholderVersion(currentCaseId, placeholder.id, {
             original_name: droppedFile.name,
             s3_key: uploadData.filePath,
             mime_type: droppedFile.type || "application/octet-stream",
@@ -1074,26 +1231,31 @@ requiredDocsList.addEventListener("drop", (event) => {
             encryption_tag: uploadData.encryption_tag
           });
 
+          const version = placeholderUploadResult?.version || {};
+
           currentDocs.push({
-            name: linkedDocument.original_name,
+            name: version.original_name || droppedFile.name,
             previewUrl: "",
-            mimeType: linkedDocument.mime_type || droppedFile.type || "",
-            s3Key: linkedDocument.s3_key,
-            encryptionIv: linkedDocument.encryption_iv || "",
-            encryptionTag: linkedDocument.encryption_tag || "",
-            uploadedAt: linkedDocument.uploaded_at || ""
+            mimeType: version.mime_type || droppedFile.type || "",
+            s3Key: version.s3_key || uploadData.filePath,
+            encryptionIv: version.encryption_iv || uploadData.encryption_iv || "",
+            encryptionTag: version.encryption_tag || uploadData.encryption_tag || "",
+            uploadedAt: version.uploaded_at || ""
           });
 
-          await linkUploadedToPlaceholder(
-            {
-              name: linkedDocument.original_name,
-              s3Key: linkedDocument.s3_key,
-              encryptionIv: linkedDocument.encryption_iv || "",
-              encryptionTag: linkedDocument.encryption_tag || "",
-              mimeType: linkedDocument.mime_type || droppedFile.type || ""
-            },
-            placeholderIndex
-          );
+          if (placeholderUploadResult?.placeholder) {
+            const refreshedCases = readCases();
+            const refreshedIndex = refreshedCases.findIndex((entry) => String(entry.id) === String(currentCaseId));
+            if (refreshedIndex >= 0) {
+              const currentRequired = [...(refreshedCases[refreshedIndex].requiredDocuments || [])];
+              currentRequired[placeholderIndex] = normalizePlaceholder(placeholderUploadResult.placeholder);
+              refreshedCases[refreshedIndex] = {
+                ...refreshedCases[refreshedIndex],
+                requiredDocuments: currentRequired
+              };
+              writeCases(refreshedCases);
+            }
+          }
         }
 
         const refreshedCases = readCases();
@@ -1143,6 +1305,12 @@ requiredDocsList.addEventListener("click", (event) => {
     return;
   }
 
+  const historyBtn = event.target.closest("[data-history-placeholder-id]");
+  if (historyBtn) {
+    openPlaceholderHistory(historyBtn.dataset.historyPlaceholderId);
+    return;
+  }
+
   const removeBtn = event.target.closest("[data-remove-placeholder-id]");
   if (!removeBtn) return;
   removePlaceholderFromCase(removeBtn.dataset.removePlaceholderId);
@@ -1154,6 +1322,30 @@ assignCaseUserBtn.addEventListener("click", assignSelectedUserToCase);
 cancelEditBtn.addEventListener("click", () => {
   editCaseModal.close();
 });
+
+if (closePlaceholderHistoryBtn) {
+  closePlaceholderHistoryBtn.addEventListener("click", () => {
+    activeHistoryPlaceholderId = null;
+    placeholderHistoryModal.close();
+  });
+}
+
+if (placeholderHistoryModal) {
+  placeholderHistoryModal.addEventListener("close", () => {
+    activeHistoryPlaceholderId = null;
+  });
+}
+
+if (placeholderHistoryTimeline) {
+  placeholderHistoryTimeline.addEventListener("click", (event) => {
+    const downloadBtn = event.target.closest("[data-history-s3-key]");
+    if (!downloadBtn) return;
+    triggerDocumentDownload({
+      original_name: downloadBtn.dataset.historyFileName || "file",
+      s3_key: downloadBtn.dataset.historyS3Key || ""
+    });
+  });
+}
 
 if (editCaseTeamList) {
   editCaseTeamList.addEventListener("change", (event) => {
@@ -1310,12 +1502,7 @@ async function initPage() {
       deadline: entry.deadline || "",
       comments: storedCase?.comments || [],
       requiredDocuments: placeholders.map((placeholder) => ({
-        id: placeholder.id,
-        name: placeholder.name,
-        status: placeholder.status || "Pending",
-        attachedFiles: Array.isArray(placeholder.attached_files)
-          ? placeholder.attached_files
-          : []
+        ...normalizePlaceholder(placeholder)
       })),
       uploadedDocuments: documents.map((document) => ({
         name: document.original_name,

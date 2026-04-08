@@ -314,6 +314,17 @@ async function linkPlaceholderToDocument(caseId, placeholderId, payload) {
   });
 }
 
+async function uploadPlaceholderVersion(caseId, placeholderId, payload) {
+  return apiRequest(`/cases/${encodeURIComponent(caseId)}/placeholders/${encodeURIComponent(placeholderId)}/upload`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function getPlaceholderHistory(placeholderId) {
+  return apiRequest(`/placeholders/${encodeURIComponent(placeholderId)}/history`);
+}
+
 async function getPendingUsers() {
   return apiRequest("/admin/users/pending");
 }

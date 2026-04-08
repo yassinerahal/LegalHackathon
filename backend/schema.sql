@@ -66,6 +66,7 @@ CREATE TABLE documents (
 CREATE TABLE document_versions (
     id SERIAL PRIMARY KEY,
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    placeholder_id INTEGER,
     original_name VARCHAR(255) NOT NULL,
     s3_key VARCHAR(500) UNIQUE NOT NULL,
     mime_type VARCHAR(100),
@@ -119,6 +120,9 @@ CREATE TABLE case_placeholders (
     case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'Pending',
-    attached_files JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE document_versions
+ADD CONSTRAINT document_versions_placeholder_id_fkey
+FOREIGN KEY (placeholder_id) REFERENCES case_placeholders(id) ON DELETE CASCADE;

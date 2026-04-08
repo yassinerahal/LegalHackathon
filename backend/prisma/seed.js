@@ -72,6 +72,114 @@ async function upsertUser(data) {
   });
 }
 
+async function upsertDemoCase(item, pattern, startingSequence) {
+  const existingCase = await prisma.case.findFirst({
+    where: {
+      name: item.name,
+      client_id: item.client.id
+    },
+    include: {
+      case_assignments: true,
+      case_placeholders: true
+    }
+  });
+
+  let sequence = startingSequence;
+  let targetCase = existingCase;
+
+  if (!targetCase) {
+    let caseNumber = "";
+    let numberAvailable = false;
+
+    while (!numberAvailable) {
+      sequence += 1;
+      caseNumber = generateCaseNumber(pattern, sequence, {
+        lawyerInitials: getInitials(item.owner?.full_name || item.owner?.username || ""),
+        clientInitials: getInitials(item.client.full_name || "")
+      });
+
+      const numberMatch = await prisma.case.findUnique({
+        where: { case_number: caseNumber },
+        select: { id: true }
+      });
+
+      numberAvailable = !numberMatch;
+    }
+
+    targetCase = await prisma.case.create({
+      data: {
+        name: item.name,
+        case_number: caseNumber,
+        client_id: item.client.id,
+        owner_id: item.owner?.id || null,
+        status: item.status.toLowerCase(),
+        deadline: item.deadline,
+        short_description: item.short_description
+      },
+      include: {
+        case_assignments: true,
+        case_placeholders: true
+      }
+    });
+  } else {
+    targetCase = await prisma.case.update({
+      where: { id: targetCase.id },
+      data: {
+        client_id: item.client.id,
+        owner_id: item.owner?.id || null,
+        status: item.status.toLowerCase(),
+        deadline: item.deadline,
+        short_description: item.short_description
+      },
+      include: {
+        case_assignments: true,
+        case_placeholders: true
+      }
+    });
+  }
+
+  for (const assignee of item.assignees) {
+    await prisma.caseAssignment.upsert({
+      where: {
+        case_id_user_id: {
+          case_id: targetCase.id,
+          user_id: assignee.id
+        }
+      },
+      update: {},
+      create: {
+        case_id: targetCase.id,
+        user_id: assignee.id
+      }
+    });
+  }
+
+  for (const placeholder of item.placeholders) {
+    const existingPlaceholder = targetCase.case_placeholders.find(
+      (entry) => entry.name === placeholder.name
+    );
+
+    if (existingPlaceholder) {
+      await prisma.casePlaceholder.update({
+        where: { id: existingPlaceholder.id },
+        data: {
+          status: placeholder.status
+        }
+      });
+    } else {
+      await prisma.casePlaceholder.create({
+        data: {
+          case_id: targetCase.id,
+          name: placeholder.name,
+          status: placeholder.status
+        }
+      });
+    }
+  }
+
+  return sequence;
+}
+
 async function seedDemoData() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
@@ -179,12 +287,6 @@ async function seedDemoData() {
     }
   });
 
-  const existingCaseCount = await prisma.case.count();
-  if (existingCaseCount > 0) {
-    console.log("Demo seed skipped case creation because cases already exist.");
-    return;
-  }
-
   const pattern = casePatternSetting.pattern || DEFAULT_CASE_PATTERN;
   let sequence = casePatternSetting.current_sequence || 0;
 
@@ -244,48 +346,7 @@ async function seedDemoData() {
   ];
 
   for (const item of demoCases) {
-    sequence += 1;
-    const caseNumber = generateCaseNumber(pattern, sequence, {
-      lawyerInitials: getInitials(item.owner?.full_name || item.owner?.username || ""),
-      clientInitials: getInitials(item.client.full_name || "")
-    });
-
-    const createdCase = await prisma.case.create({
-      data: {
-        name: item.name,
-        case_number: caseNumber,
-        client_id: item.client.id,
-        owner_id: item.owner?.id || null,
-        status: item.status.toLowerCase(),
-        deadline: item.deadline,
-        short_description: item.short_description
-      }
-    });
-
-    for (const assignee of item.assignees) {
-      await prisma.caseAssignment.upsert({
-        where: {
-          case_id_user_id: {
-            case_id: createdCase.id,
-            user_id: assignee.id
-          }
-        },
-        update: {},
-        create: {
-          case_id: createdCase.id,
-          user_id: assignee.id
-        }
-      });
-    }
-
-    await prisma.casePlaceholder.createMany({
-      data: item.placeholders.map((placeholder) => ({
-        case_id: createdCase.id,
-        name: placeholder.name,
-        status: placeholder.status,
-        attached_files: []
-      }))
-    });
+    sequence = await upsertDemoCase(item, pattern, sequence);
   }
 
   await prisma.systemSetting.update({

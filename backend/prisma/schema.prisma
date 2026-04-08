@@ -108,29 +108,31 @@ model Document {
 }
 
 model DocumentVersion {
-  id             Int       @id @default(autoincrement())
+  id             Int              @id @default(autoincrement())
   document_id    Int
+  placeholder_id Int?
   original_name  String
-  s3_key         String    @unique
+  s3_key         String           @unique
   mime_type      String?
   encryption_iv  String?
   encryption_tag String?
-  uploaded_at    DateTime  @default(now())
+  uploaded_at    DateTime         @default(now())
   uploaded_by    Int?
-  document       Document  @relation(fields: [document_id], references: [id], onDelete: Cascade)
-  uploaded_user  User?     @relation("UploadedByUser", fields: [uploaded_by], references: [id], onDelete: SetNull)
+  document       Document         @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  placeholder    CasePlaceholder? @relation(fields: [placeholder_id], references: [id], onDelete: Cascade)
+  uploaded_user  User?            @relation("UploadedByUser", fields: [uploaded_by], references: [id], onDelete: SetNull)
 
   @@map("document_versions")
 }
 
 model CasePlaceholder {
-  id              Int      @id @default(autoincrement())
-  case_id         Int
-  name            String
-  status          String   @default("Pending")
-  attached_files  Json     @default("[]")
-  created_at      DateTime @default(now())
-  case            Case     @relation(fields: [case_id], references: [id], onDelete: Cascade)
+  id         Int               @id @default(autoincrement())
+  case_id    Int
+  name       String
+  status     String            @default("Pending")
+  created_at DateTime          @default(now())
+  case       Case              @relation(fields: [case_id], references: [id], onDelete: Cascade)
+  versions   DocumentVersion[]
 
   @@map("case_placeholders")
 }

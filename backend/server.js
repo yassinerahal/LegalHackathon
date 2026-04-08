@@ -475,6 +475,7 @@ async function ensureRemoteAccessSchema() {
   `);
   await prisma.$executeRawUnsafe(`
     ALTER TABLE document_versions
+    ADD COLUMN IF NOT EXISTS placeholder_id INTEGER,
     ADD COLUMN IF NOT EXISTS encryption_iv VARCHAR(255),
     ADD COLUMN IF NOT EXISTS encryption_tag VARCHAR(255)
   `);
@@ -483,6 +484,40 @@ async function ensureRemoteAccessSchema() {
     ON cases(case_number)
     WHERE case_number IS NOT NULL
   `);
+}
+
+function serializePlaceholder(placeholder) {
+  const versions = Array.isArray(placeholder?.versions)
+    ? [...placeholder.versions]
+        .sort((left, right) => new Date(left.uploaded_at) - new Date(right.uploaded_at))
+        .map((version) => ({
+          id: version.id,
+          placeholder_id: version.placeholder_id,
+          original_name: version.original_name,
+          s3_key: version.s3_key,
+          mime_type: version.mime_type,
+          encryption_iv: version.encryption_iv,
+          encryption_tag: version.encryption_tag,
+          uploaded_at: version.uploaded_at
+        }))
+    : [];
+
+  return {
+    id: placeholder.id,
+    case_id: placeholder.case_id,
+    name: placeholder.name,
+    status: placeholder.status || (versions.length ? "Uploaded" : "Pending"),
+    created_at: placeholder.created_at,
+    versions,
+    attached_files: versions.map((version) => ({
+      original_name: version.original_name,
+      s3_key: version.s3_key,
+      mime_type: version.mime_type,
+      encryption_iv: version.encryption_iv,
+      encryption_tag: version.encryption_tag,
+      uploaded_at: version.uploaded_at
+    }))
+  };
 }
 
 async function ensureBootstrapAdmin() {
@@ -888,19 +923,52 @@ app.post("/api/cases/:id/placeholders", requireCaseEditAccess, async (req, res) 
     }
 
     const created = await prisma.$transaction(
-      placeholders.map((placeholder) =>
-        prisma.casePlaceholder.create({
+      placeholders.map(async (placeholder) => {
+        const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
+        const createdPlaceholder = await prisma.casePlaceholder.create({
           data: {
             case_id: Number(caseId),
             name: String(placeholder.name || "").trim(),
-            status: String(placeholder.status || "Pending"),
-            attached_files: Array.isArray(placeholder.attached_files) ? placeholder.attached_files : []
+            status: attachedFiles.length ? "Uploaded" : String(placeholder.status || "Pending")
           }
-        })
-      )
+        });
+
+        for (const file of attachedFiles) {
+          if (!file?.original_name || !file?.s3_key) continue;
+
+          const document = await prisma.document.create({
+            data: {
+              case_id: Number(caseId),
+              name: file.original_name
+            }
+          });
+
+          await prisma.documentVersion.create({
+            data: {
+              document_id: document.id,
+              placeholder_id: createdPlaceholder.id,
+              original_name: file.original_name,
+              s3_key: file.s3_key,
+              mime_type: file.mime_type || null,
+              encryption_iv: file.encryption_iv || null,
+              encryption_tag: file.encryption_tag || null,
+              uploaded_by: req.auth.id
+            }
+          });
+        }
+
+        return prisma.casePlaceholder.findUnique({
+          where: { id: createdPlaceholder.id },
+          include: {
+            versions: {
+              orderBy: { uploaded_at: "asc" }
+            }
+          }
+        });
+      })
     );
 
-    res.status(201).json(created);
+    res.status(201).json(created.map(serializePlaceholder));
   } catch (error) {
     console.error("Create placeholders error:", error);
     res.status(500).json({ error: "Failed to create placeholders" });
@@ -921,10 +989,15 @@ app.get("/api/cases/:id/placeholders", requireStaffAuth, async (req, res) => {
 
     const placeholders = await prisma.casePlaceholder.findMany({
       where: { case_id: Number(caseId) },
+      include: {
+        versions: {
+          orderBy: { uploaded_at: "asc" }
+        }
+      },
       orderBy: [{ created_at: "asc" }, { id: "asc" }]
     });
 
-    res.json(placeholders);
+    res.json(placeholders.map(serializePlaceholder));
   } catch (error) {
     console.error("Fetch placeholders error:", error);
     res.status(500).json({ error: "Failed to fetch placeholders" });
@@ -969,6 +1042,52 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
       return res.status(404).json({ error: "Document not found for this case" });
     }
 
+    await prisma.documentVersion.update({
+      where: { id: documentVersion.id },
+      data: {
+        placeholder_id: Number(placeholderId),
+        original_name,
+        mime_type: mime_type || null,
+        encryption_iv,
+        encryption_tag
+      }
+    });
+
+    const updatedPlaceholder = await prisma.casePlaceholder.update({
+      where: { id: Number(placeholderId) },
+      data: {
+        status: "Uploaded"
+      },
+      include: {
+        versions: {
+          orderBy: { uploaded_at: "asc" }
+        }
+      }
+    });
+
+    res.json(serializePlaceholder(updatedPlaceholder));
+  } catch (error) {
+    console.error("Link placeholder error:", error);
+    res.status(500).json({ error: "Failed to link placeholder" });
+  }
+});
+
+app.put("/api/cases/:id/placeholders/:placeholderId/upload", requireCaseEditAccess, async (req, res) => {
+  try {
+    const caseId = req.params.id;
+    const placeholderId = req.params.placeholderId;
+    const { original_name, s3_key, mime_type, encryption_iv, encryption_tag } = req.body;
+
+    if (!/^\d+$/.test(String(caseId)) || !/^\d+$/.test(String(placeholderId))) {
+      return res.status(400).json({ error: "Invalid case or placeholder id" });
+    }
+
+    if (!original_name || !s3_key || !encryption_iv || !encryption_tag) {
+      return res
+        .status(400)
+        .json({ error: "original_name, s3_key, encryption_iv, and encryption_tag are required" });
+    }
+
     const placeholder = await prisma.casePlaceholder.findFirst({
       where: {
         id: Number(placeholderId),
@@ -980,27 +1099,118 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
       return res.status(404).json({ error: "Placeholder not found for this case" });
     }
 
-    const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
-    attachedFiles.push({
-      original_name,
-      s3_key,
-      mime_type: mime_type || null,
-      encryption_iv,
-      encryption_tag
+    const result = await prisma.$transaction(async (tx) => {
+      const document = await tx.document.create({
+        data: {
+          case_id: Number(caseId),
+          name: original_name
+        }
+      });
+
+      const version = await tx.documentVersion.create({
+        data: {
+          document_id: document.id,
+          placeholder_id: Number(placeholderId),
+          original_name,
+          s3_key,
+          mime_type: mime_type || null,
+          encryption_iv,
+          encryption_tag,
+          uploaded_by: req.auth.id
+        }
+      });
+
+      const updatedPlaceholder = await tx.casePlaceholder.update({
+        where: { id: Number(placeholderId) },
+        data: {
+          status: "Uploaded"
+        },
+        include: {
+          versions: {
+            orderBy: { uploaded_at: "asc" }
+          }
+        }
+      });
+
+      return { version, placeholder: updatedPlaceholder };
     });
 
-    const updatedPlaceholder = await prisma.casePlaceholder.update({
-      where: { id: Number(placeholderId) },
-      data: {
-        status: "Uploaded",
-        attached_files: attachedFiles
+    res.status(201).json({
+      version: {
+        id: result.version.id,
+        placeholder_id: result.version.placeholder_id,
+        original_name: result.version.original_name,
+        s3_key: result.version.s3_key,
+        mime_type: result.version.mime_type,
+        encryption_iv: result.version.encryption_iv,
+        encryption_tag: result.version.encryption_tag,
+        uploaded_at: result.version.uploaded_at
+      },
+      placeholder: serializePlaceholder(result.placeholder)
+    });
+  } catch (error) {
+    console.error("Placeholder upload error:", error);
+    res.status(500).json({ error: "Failed to upload placeholder version" });
+  }
+});
+
+app.get("/api/placeholders/:placeholderId/history", requireStaffAuth, async (req, res) => {
+  try {
+    const placeholderId = Number(req.params.placeholderId);
+    if (!Number.isInteger(placeholderId) || placeholderId <= 0) {
+      return res.status(400).json({ error: "Invalid placeholder id" });
+    }
+
+    const placeholder = await prisma.casePlaceholder.findUnique({
+      where: { id: placeholderId },
+      include: {
+        case: {
+          select: {
+            owner_id: true,
+            case_assignments: {
+              where: { user_id: Number(req.auth.id) },
+              select: { id: true }
+            }
+          }
+        },
+        versions: {
+          orderBy: { uploaded_at: "asc" }
+        }
       }
     });
 
-    res.json(updatedPlaceholder);
+    if (!placeholder) {
+      return res.status(404).json({ error: "Placeholder not found" });
+    }
+
+    const access = buildCaseAccessFlags(
+      {
+        owner_id: placeholder.case.owner_id,
+        case_assignments: placeholder.case.case_assignments
+      },
+      req.auth.id,
+      req.auth.role
+    );
+
+    if (!access.canView) {
+      return res.status(403).json({ error: "You do not have access to this placeholder" });
+    }
+
+    res.json(
+      placeholder.versions.map((version) => ({
+        id: version.id,
+        placeholder_id: version.placeholder_id,
+        original_name: version.original_name,
+        s3_key: version.s3_key,
+        mime_type: version.mime_type,
+        encryption_iv: version.encryption_iv,
+        encryption_tag: version.encryption_tag,
+        uploaded_at: version.uploaded_at
+      }))
+    );
   } catch (error) {
-    console.error("Link placeholder error:", error);
-    res.status(500).json({ error: "Failed to link placeholder" });
+    console.error("Fetch placeholder history error:", error);
+    res.status(500).json({ error: "Failed to fetch placeholder history" });
   }
 });
 
@@ -1041,30 +1251,19 @@ app.delete("/api/cases/:id/placeholders/:placeholderId", requireCaseEditAccess, 
       return res.status(404).json({ error: "Placeholder not found for this case" });
     }
 
-    const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
-    const attachedKeys = [
-      ...new Set(
-        attachedFiles
-          .map((file) => String(file?.s3_key || "").trim())
-          .filter(Boolean)
-      )
-    ];
-
-    const documentVersions = attachedKeys.length
-      ? await prisma.documentVersion.findMany({
-          where: {
-            s3_key: { in: attachedKeys },
-            document: {
-              case_id: Number(caseId)
-            }
-          },
-          select: {
-            id: true,
-            document_id: true,
-            s3_key: true
-          }
-        })
-      : [];
+    const documentVersions = await prisma.documentVersion.findMany({
+      where: {
+        placeholder_id: Number(placeholderId),
+        document: {
+          case_id: Number(caseId)
+        }
+      },
+      select: {
+        id: true,
+        document_id: true,
+        s3_key: true
+      }
+    });
 
     for (const version of documentVersions) {
       await deleteStoredFileByKey(version.s3_key);
