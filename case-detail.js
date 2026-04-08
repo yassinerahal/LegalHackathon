@@ -29,6 +29,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const deleteCaseBtn = document.getElementById("deleteCaseBtn");
 const editCaseBtn = document.getElementById("editCaseBtn");
 const editCaseModal = document.getElementById("editCaseModal");
+const editCaseNumber = document.getElementById("editCaseNumber");
 const editCaseName = document.getElementById("editCaseName");
 const editClientNames = document.getElementById("editClientNames");
 const editCaseStatus = document.getElementById("editCaseStatus");
@@ -563,7 +564,7 @@ function renderCaseDetails(entry) {
   const canEditCurrentCase = canEditCase(getStoredSession(), entry);
   const canModifyMetadata = canModifyCaseMetadata(getStoredSession(), entry);
   caseTitle.textContent = entry.title || "Case";
-  caseMeta.textContent = `${entry.stage || "No description"} • ${(entry.clientNames || []).join(", ")}`;
+  caseMeta.textContent = `${entry.caseNumber ? `${entry.caseNumber} • ` : ""}${entry.stage || "No description"} • ${(entry.clientNames || []).join(", ")}`;
   caseDescription.textContent = entry.stage || "No description added yet.";
   caseDeadline.textContent = entry.deadline ? `Deadline: ${entry.deadline}` : "Deadline: Not set";
 
@@ -862,6 +863,9 @@ function openEditModal() {
   const entry = readCases().find((item) => String(item.id) === String(currentCaseId));
   if (!entry) return;
   const isReadOnly = !canModifyCaseMetadata(getStoredSession(), entry);
+  if (editCaseNumber) {
+    editCaseNumber.value = entry.caseNumber || "";
+  }
   editCaseName.value = entry.title || "";
   editClientNames.value = (entry.clientNames || []).join(", ");
   editCaseStatus.value = entry.status || "Active";
@@ -1296,6 +1300,7 @@ async function initPage() {
       client_id: entry.client_id,
       owner_id: entry.owner_id || null,
       title: entry.name,
+      caseNumber: entry.case_number || "",
       stage: entry.short_description || "No description",
       clientNames: entry.client_name ? [entry.client_name] : [],
       status: entry.status || "open",

@@ -5,7 +5,8 @@ const state = {
   cases: [],
   deadlines: [],
   clients: [],
-  documents: 0
+  documents: 0,
+  casePatternSetting: null
 };
 
 const dashboardMain = document.querySelector(".dashboard-main");
@@ -30,6 +31,11 @@ const assignUploadCaseSelect = document.getElementById("assignUploadCaseSelect")
 const cancelAssignUploadBtn = document.getElementById("cancelAssignUploadBtn");
 const confirmAssignUploadBtn = document.getElementById("confirmAssignUploadBtn");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
+const casePatternWarning = document.getElementById("casePatternWarning");
+const casePatternAdminCard = document.getElementById("casePatternAdminCard");
+const casePatternInput = document.getElementById("casePatternInput");
+const casePatternStatus = document.getElementById("casePatternStatus");
+const saveCasePatternBtn = document.getElementById("saveCasePatternBtn");
 
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
@@ -39,6 +45,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const billingBtn = document.getElementById("billingBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
+const caseNumberPreview = document.getElementById("caseNumberPreview");
 const caseName = document.getElementById("caseName");
 const clientNames = document.getElementById("clientNames");
 const clientStatus = document.getElementById("clientStatus");
@@ -215,17 +222,55 @@ function writeStoredCases(cases) {
   localStorage.setItem(CASES_KEY, JSON.stringify(cases.map(sanitizeCaseForStorage)));
 }
 
+function getConfiguredCasePattern() {
+  return state.casePatternSetting?.pattern || "";
+}
+
+function isCasePatternConfigured() {
+  return Boolean(getConfiguredCasePattern());
+}
+
+function applyCaseCreationLock(session = getStoredSession()) {
+  if (!newCaseMainBtn) return;
+
+  const canCreate = canCreateCases(session);
+  const isLocked = canCreate && !isCasePatternConfigured();
+
+  newCaseMainBtn.hidden = !canCreate;
+  newCaseMainBtn.disabled = isLocked;
+  newCaseMainBtn.classList.toggle("opacity-50", isLocked);
+  newCaseMainBtn.classList.toggle("cursor-not-allowed", isLocked);
+  newCaseMainBtn.classList.toggle("pointer-events-none", isLocked);
+
+  if (casePatternWarning) {
+    casePatternWarning.classList.toggle("hidden", !isLocked);
+  }
+}
+
+function renderCasePatternAdminCard(session = getStoredSession()) {
+  if (!casePatternAdminCard || !casePatternInput || !casePatternStatus || !saveCasePatternBtn) return;
+
+  const isAdmin = session?.role === "admin";
+  casePatternAdminCard.classList.toggle("hidden", !isAdmin);
+  if (!isAdmin) return;
+
+  casePatternInput.value = getConfiguredCasePattern();
+  casePatternStatus.textContent = isCasePatternConfigured()
+    ? `Current pattern: ${getConfiguredCasePattern()}`
+    : "No case number pattern configured yet.";
+  casePatternStatus.className = `mt-3 text-sm ${
+    isCasePatternConfigured() ? "text-slate-500" : "text-red-700"
+  }`;
+}
+
 async function initDashboard() {
   const session = requireSession();
   if (!session) return;
   applyTheme(readTheme());
   renderLoggedInUser();
   ensureUploadInputHints();
-  if (newCaseMainBtn) {
-    newCaseMainBtn.hidden = !canCreateCases(session);
-  }
   try {
-    const requests = [getCases(), getClients()];
+    const requests = [getCases(), getClients(), getCasePatternSetting()];
     if (session.role === "admin" || session.role === "lawyer") {
       requests.push(getAssignableUsers());
     }
@@ -233,6 +278,7 @@ async function initDashboard() {
     const responses = await Promise.all(requests);
     const cases = responses.shift() || [];
     const clients = responses.shift() || [];
+    state.casePatternSetting = responses.shift() || null;
     const assignableUsers =
       session.role === "admin" || session.role === "lawyer" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
@@ -252,6 +298,7 @@ async function initDashboard() {
     state.cases = cases.map((entry) => ({
       id: entry.id,
       title: entry.name,
+      caseNumber: entry.case_number || "",
       stage: entry.short_description || "No description",
       client_id: entry.client_id,
       owner_id: entry.owner_id || null,
@@ -288,6 +335,7 @@ async function initDashboard() {
       }));
     assignableCaseUsers = Array.isArray(assignableUsers) ? assignableUsers : [];
     writeStoredCases(state.cases);
+    applyCaseCreationLock(session);
     render();
   } catch (error) {
     console.error(error);
@@ -397,6 +445,7 @@ function renderCases() {
 
     li.innerHTML = `
       <div class="min-w-0">
+        ${entry.caseNumber ? `<p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">${entry.caseNumber}</p>` : ""}
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <strong class="block text-lg font-semibold text-slate-800">${entry.title}</strong>
@@ -489,6 +538,7 @@ function renderClients() {
 }
 
 function render() {
+  renderCasePatternAdminCard();
   renderStats();
   renderCases();
   renderDeadlines();
@@ -619,6 +669,9 @@ function clearClientForm() {
 function clearCaseForm() {
   editingCaseId = null;
   modalTitle.textContent = "Add Case";
+  if (caseNumberPreview) {
+    caseNumberPreview.value = "Generated automatically after creation";
+  }
   caseName.value = "";
   clientNames.value = "";
   caseStatus.value = "Active";
@@ -831,6 +884,9 @@ async function openEditCase(caseId) {
 
   editingCaseId = caseId;
   modalTitle.textContent = "Edit Case";
+  if (caseNumberPreview) {
+    caseNumberPreview.value = entry.caseNumber || "Generated automatically after creation";
+  }
   caseName.value = entry.title;
   clientNames.value = entry.clientNames.join(", ");
   caseStatus.value = entry.status || "Active";
@@ -868,6 +924,10 @@ async function openEditCase(caseId) {
 newCaseMainBtn.addEventListener("click", () => {
   if (!canCreateCases(getStoredSession())) {
     window.alert("Your role cannot create new cases.");
+    return;
+  }
+  if (!isCasePatternConfigured()) {
+    window.alert("Admin must configure the case number pattern first.");
     return;
   }
   clearCaseForm();
@@ -1259,7 +1319,13 @@ saveBtn.addEventListener("click", async () => {
   }
 
   try {
+    if (!editingCaseId && !isCasePatternConfigured()) {
+      window.alert("Admin must configure the case number pattern first.");
+      return;
+    }
+
     let targetCaseId;
+    let createdCaseNumber = "";
     const uploadedDocumentMap = new Map();
 
     if (editingCaseId) {
@@ -1278,6 +1344,7 @@ saveBtn.addEventListener("click", async () => {
           ...state.cases[caseIndex],
           id: updated.id,
           title: updated.name,
+          caseNumber: updated.case_number || state.cases[caseIndex].caseNumber || "",
           stage: updated.short_description || "No description",
           client_id: updated.client_id,
           clientNames: [existingClient.name],
@@ -1294,10 +1361,12 @@ saveBtn.addEventListener("click", async () => {
           short_description
       });
       targetCaseId = created.id;
+      createdCaseNumber = created.case_number || "";
       
       state.cases.unshift({
         id: created.id,
         title: created.name,
+        caseNumber: created.case_number || "",
         stage: created.short_description || "No description",
         client_id: created.client_id,
         clientNames: [existingClient.name],
@@ -1419,11 +1488,47 @@ saveBtn.addEventListener("click", async () => {
     quickAddModal.close();
     writeStoredCases(state.cases);
     render();
+    if (!editingCaseId && createdCaseNumber) {
+      window.alert(`Case created successfully.\nInternal Case Number: ${createdCaseNumber}`);
+    }
   } catch (error) {
     console.error(error);
     alert(error.message || "Failed to save case.");
   }
 });
+
+if (saveCasePatternBtn) {
+  saveCasePatternBtn.addEventListener("click", async () => {
+    const session = getStoredSession();
+    if (session?.role !== "admin") return;
+
+    const pattern = String(casePatternInput?.value || "").trim();
+    if (!pattern) {
+      casePatternStatus.textContent = "Pattern is required.";
+      casePatternStatus.className = "mt-3 text-sm text-red-700";
+      casePatternInput.focus();
+      return;
+    }
+
+    try {
+      saveCasePatternBtn.disabled = true;
+      casePatternStatus.textContent = "Saving case number pattern...";
+      casePatternStatus.className = "mt-3 text-sm text-slate-500";
+
+      const response = await updateCasePatternSetting(pattern);
+      state.casePatternSetting = response.setting;
+      applyCaseCreationLock(session);
+      renderCasePatternAdminCard(session);
+      showToast("Case number pattern saved.", "success");
+    } catch (error) {
+      console.error("Failed to save case number pattern:", error);
+      casePatternStatus.textContent = error.message || "Failed to save case number pattern.";
+      casePatternStatus.className = "mt-3 text-sm text-red-700";
+    } finally {
+      saveCasePatternBtn.disabled = false;
+    }
+  });
+}
 
 renderDocPlaceholderList();
 renderUploadedFileBoxes();

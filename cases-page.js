@@ -62,6 +62,7 @@ async function renderCases() {
         "case-row-clickable grid gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
       li.innerHTML = `
         <div class="min-w-0">
+          ${entry.case_number ? `<p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">${entry.case_number}</p>` : ""}
           <strong class="block text-lg font-semibold text-slate-800">${entry.name}</strong>
           <p class="mt-2 text-sm text-slate-500">
             ${entry.short_description || "No description"} • ${entry.client_name || "No client"}

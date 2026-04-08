@@ -20,6 +20,7 @@ const REMOTE_ACCESS_EXPIRY_HOURS = Number(process.env.REMOTE_ACCESS_EXPIRY_HOURS
 const BOOTSTRAP_ADMIN_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || "admin";
 const BOOTSTRAP_ADMIN_EMAIL = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@nextact.local").trim().toLowerCase();
 const BOOTSTRAP_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin123!";
+const CASE_NUMBER_SETTING_KEY = "CASE_NUMBER_CONFIG";
 
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET must be set in the backend environment.");
@@ -414,12 +415,71 @@ function formatDateOnly(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+function normalizeCasePattern(pattern) {
+  return String(pattern || "").trim();
+}
+
+function getInitials(value) {
+  const normalized = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!normalized.length) {
+    return "";
+  }
+
+  return normalized
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function generateCaseNumber(pattern, sequence, context = {}) {
+  const now = new Date();
+  const fullYear = String(now.getFullYear());
+  const shortYear = fullYear.slice(-2);
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const rawSequence = String(sequence);
+  const paddedSequence3 = String(sequence).padStart(3, "0");
+  const paddedSequence4 = String(sequence).padStart(4, "0");
+
+  return normalizeCasePattern(pattern)
+    .replaceAll("[YYYY]", fullYear)
+    .replaceAll("[YY]", shortYear)
+    .replaceAll("[MM]", month)
+    .replaceAll("[DD]", day)
+    .replaceAll("[SEQ4]", paddedSequence4)
+    .replaceAll("[SEQ3]", paddedSequence3)
+    .replaceAll("[SEQ]", rawSequence)
+    .replaceAll("[L_INIT]", context.lawyerInitials || "")
+    .replaceAll("[C_INIT]", context.clientInitials || "");
+}
+
 async function ensureRemoteAccessSchema() {
   await prisma.$connect();
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id SERIAL PRIMARY KEY,
+      setting_key VARCHAR(255) UNIQUE NOT NULL,
+      pattern VARCHAR(255),
+      current_sequence INTEGER DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS case_number VARCHAR(255)
+  `);
   await prisma.$executeRawUnsafe(`
     ALTER TABLE document_versions
     ADD COLUMN IF NOT EXISTS encryption_iv VARCHAR(255),
     ADD COLUMN IF NOT EXISTS encryption_tag VARCHAR(255)
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS cases_case_number_key
+    ON cases(case_number)
+    WHERE case_number IS NOT NULL
   `);
 }
 
@@ -942,6 +1002,23 @@ app.put("/api/cases/:id/placeholders/:placeholderId/link", requireCaseEditAccess
   }
 });
 
+app.get("/api/settings/case-pattern", requireAuth, async (req, res) => {
+  try {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { setting_key: CASE_NUMBER_SETTING_KEY }
+    });
+
+    res.json({
+      pattern: setting?.pattern || "",
+      current_sequence: setting?.current_sequence || 0,
+      is_configured: Boolean(setting?.pattern)
+    });
+  } catch (error) {
+    console.error("Fetch case pattern error:", error);
+    res.status(500).json({ error: "Failed to fetch case pattern settings" });
+  }
+});
+
 app.delete("/api/cases/:id/placeholders/:placeholderId", requireCaseEditAccess, async (req, res) => {
   try {
     const caseId = req.params.id;
@@ -1237,6 +1314,7 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
         return {
           id: entry.id,
           name: entry.name,
+          case_number: entry.case_number || "",
           client_id: entry.client_id,
           owner_id: entry.owner_id,
           status: entry.status,
@@ -1287,6 +1365,7 @@ app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
     res.json({
       id: entry.id,
       name: entry.name,
+      case_number: entry.case_number || "",
       client_id: entry.client_id,
       owner_id: entry.owner_id,
       status: entry.status,
@@ -1308,6 +1387,10 @@ app.get("/api/cases/:id", requireStaffAuth, async (req, res) => {
 
 app.put("/api/cases/:id", requireCaseEditAccess, async (req, res) => {
   try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "case_number")) {
+      return res.status(400).json({ error: "case_number is immutable and cannot be changed" });
+    }
+
     const { name, client_id, status, deadline, short_description } = req.body;
 
     const updatedCase = await prisma.case.update({
@@ -1360,16 +1443,79 @@ app.post("/api/cases", requireRole(["admin", "lawyer"]), async (req, res) => {
       return res.status(400).json({ error: "name and client_id are required" });
     }
 
-    const createdCase = await prisma.case.create({
-      data: {
-        name,
-        client_id: Number(client_id),
-        owner_id: req.auth.id,
-        status: status || "open",
-        deadline: deadline ? new Date(deadline) : null,
-        short_description: short_description || null
-      }
+    const casePatternSetting = await prisma.systemSetting.findUnique({
+      where: { setting_key: CASE_NUMBER_SETTING_KEY }
     });
+
+    if (!casePatternSetting?.pattern) {
+      return res
+        .status(403)
+        .json({ error: "Admin must configure the case number pattern first." });
+    }
+
+    const [ownerUser, client] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: Number(req.auth.id) },
+        select: {
+          username: true,
+          full_name: true
+        }
+      }),
+      prisma.client.findUnique({
+        where: { id: Number(client_id) },
+        select: {
+          full_name: true
+        }
+      })
+    ]);
+
+    if (!ownerUser) {
+      return res.status(404).json({ error: "Owner user not found" });
+    }
+
+    if (!client) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const lawyerInitials = getInitials(ownerUser.full_name || ownerUser.username || "");
+    const clientInitials = getInitials(client.full_name || "");
+
+    const createdCase = await prisma.$transaction(
+      async (tx) => {
+        const incrementedSetting = await tx.systemSetting.update({
+          where: { setting_key: CASE_NUMBER_SETTING_KEY },
+          data: {
+            current_sequence: {
+              increment: 1
+            }
+          }
+        });
+
+        const generatedCaseNumber = generateCaseNumber(
+          incrementedSetting.pattern,
+          incrementedSetting.current_sequence,
+          {
+            lawyerInitials,
+            clientInitials
+          }
+        );
+
+        return tx.case.create({
+          data: {
+            name,
+            case_number: generatedCaseNumber,
+            client_id: Number(client_id),
+            owner_id: req.auth.id,
+            status: status || "open",
+            deadline: deadline ? new Date(deadline) : null,
+            short_description: short_description || null
+          }
+        });
+      },
+      {
+        isolationLevel: "Serializable"
+      }
+    );
 
     res.status(201).json({
       ...createdCase,
@@ -1725,6 +1871,50 @@ app.get("/api/admin/users", requireRole(["admin"]), async (req, res) => {
   } catch (error) {
     console.error("Fetch users error:", error);
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.put("/api/admin/settings/case-pattern", requireRole(["admin"]), async (req, res) => {
+  try {
+    const pattern = normalizeCasePattern(req.body.pattern);
+
+    if (!pattern) {
+      return res.status(400).json({ error: "pattern is required" });
+    }
+
+    if (!/\[SEQ(?:3|4)?\]/.test(pattern)) {
+      return res.status(400).json({ error: "pattern must include [SEQ], [SEQ3], or [SEQ4]" });
+    }
+
+    const existingSetting = await prisma.systemSetting.findUnique({
+      where: { setting_key: CASE_NUMBER_SETTING_KEY }
+    });
+
+    const shouldResetSequence = !existingSetting || existingSetting.pattern !== pattern;
+
+    const updatedSetting = await prisma.systemSetting.upsert({
+      where: { setting_key: CASE_NUMBER_SETTING_KEY },
+      update: {
+        pattern,
+        current_sequence: shouldResetSequence ? 0 : existingSetting.current_sequence
+      },
+      create: {
+        setting_key: CASE_NUMBER_SETTING_KEY,
+        pattern,
+        current_sequence: 0
+      }
+    });
+
+    res.json({
+      setting: {
+        pattern: updatedSetting.pattern || "",
+        current_sequence: updatedSetting.current_sequence,
+        is_configured: Boolean(updatedSetting.pattern)
+      }
+    });
+  } catch (error) {
+    console.error("Update case pattern error:", error);
+    res.status(500).json({ error: "Failed to update case pattern settings" });
   }
 });
 

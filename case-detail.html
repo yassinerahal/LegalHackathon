@@ -131,6 +131,12 @@
       <form method="dialog" class="modal-form grid gap-4 p-6">
         <h3 class="text-3xl font-light text-slate-800">Edit Case</h3>
 
+        <label for="editCaseNumber" class="text-sm font-semibold text-slate-700">Case Number</label>
+        <div class="flex items-start gap-2">
+          <input id="editCaseNumber" class="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-100 px-4 py-3 text-base text-slate-500 outline-none cursor-not-allowed" type="text" readonly disabled />
+          <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500" title="Internal reference numbers are immutable after creation.">i</span>
+        </div>
+
         <label for="editCaseName" class="text-sm font-semibold text-slate-700">Case Name</label>
         <input id="editCaseName" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-700 outline-none focus:border-indigo-300 focus:bg-white" type="text" />
 

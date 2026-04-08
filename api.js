@@ -171,6 +171,17 @@ async function createCase(payload) {
   });
 }
 
+async function getCasePatternSetting() {
+  return apiRequest("/settings/case-pattern");
+}
+
+async function updateCasePatternSetting(pattern) {
+  return apiRequest("/admin/settings/case-pattern", {
+    method: "PUT",
+    body: JSON.stringify({ pattern })
+  });
+}
+
 async function updateCase(id, payload) {
   return apiRequest(`/cases/${encodeURIComponent(id)}`, {
     method: "PUT",

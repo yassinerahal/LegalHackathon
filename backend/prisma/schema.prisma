@@ -58,6 +58,7 @@ model RemoteAccessToken {
 model Case {
   id                 Int               @id @default(autoincrement())
   name               String
+  case_number        String            @unique
   client_id          Int
   owner_id           Int?
   status             String            @default("open")
@@ -71,6 +72,16 @@ model Case {
   case_placeholders  CasePlaceholder[]
 
   @@map("cases")
+}
+
+model SystemSetting {
+  id               Int      @id @default(autoincrement())
+  setting_key      String   @unique
+  pattern          String?
+  current_sequence Int      @default(0)
+  updated_at       DateTime @updatedAt
+
+  @@map("system_settings")
 }
 
 model CaseAssignment {
