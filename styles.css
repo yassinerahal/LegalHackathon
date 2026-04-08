@@ -332,6 +332,18 @@ body.dark-mode .gtranslate_wrapper .gt_selector {
   display: block;
 }
 
+.billing-icon-btn {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.billing-symbol {
+  display: inline-block;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-0.02em);
+}
+
 .icon-btn:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--primary) 35%, var(--line-strong) 65%);
@@ -996,6 +1008,10 @@ dialog {
   width: min(560px, 96vw);
   background: var(--card-strong);
   box-shadow: 0 38px 80px rgba(14, 20, 36, 0.26);
+}
+
+dialog:not([open]) {
+  display: none;
 }
 
 dialog::backdrop {

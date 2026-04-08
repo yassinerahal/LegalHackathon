@@ -282,18 +282,6 @@ async function initDashboard() {
     const assignableUsers =
       session.role === "admin" || session.role === "lawyer" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
-    const caseDocumentsById = new Map();
-    const documentResults = await Promise.allSettled(
-      cases.map(async (entry) => ({
-        caseId: String(entry.id),
-        documents: await getCaseDocuments(entry.id)
-      }))
-    );
-    documentResults.forEach((result) => {
-      if (result.status === "fulfilled") {
-        caseDocumentsById.set(result.value.caseId, result.value.documents);
-      }
-    });
 
     state.cases = cases.map((entry) => ({
       id: entry.id,
@@ -310,15 +298,9 @@ async function initDashboard() {
       deadline: entry.deadline || "",
       comments: storedCasesById.get(String(entry.id))?.comments || [],
       requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
-      uploadedDocuments: (caseDocumentsById.get(String(entry.id)) || []).map((document) => ({
-        name: document.original_name,
-        previewUrl: "",
-        mimeType: document.mime_type || "",
-        s3Key: document.s3_key,
-        encryptionIv: document.encryption_iv || "",
-        encryptionTag: document.encryption_tag || "",
-        uploadedAt: document.uploaded_at || ""
-      }))
+      uploadedDocuments: normalizeUploadedDocuments(
+        storedCasesById.get(String(entry.id))?.uploadedDocuments || []
+      )
     }));
     state.clients = clients.map((client) => ({
       id: client.id,
@@ -333,16 +315,72 @@ async function initDashboard() {
         title: `${entry.title} deadline`,
         date: entry.deadline
       }));
+    state.documents = state.cases.reduce(
+      (total, entry) => total + (Array.isArray(entry.uploadedDocuments) ? entry.uploadedDocuments.length : 0),
+      0
+    );
     assignableCaseUsers = Array.isArray(assignableUsers) ? assignableUsers : [];
     writeStoredCases(state.cases);
     applyCaseCreationLock(session);
     render();
+    hydrateDashboardDocuments(cases);
   } catch (error) {
     console.error(error);
   }
 }
 
 initDashboard();
+
+async function hydrateDashboardDocuments(cases) {
+  if (!Array.isArray(cases) || !cases.length) return;
+
+  const documentResults = await Promise.allSettled(
+    cases.map(async (entry) => ({
+      caseId: String(entry.id),
+      documents: await getCaseDocuments(entry.id)
+    }))
+  );
+
+  let hasUpdates = false;
+
+  documentResults.forEach((result) => {
+    if (result.status !== "fulfilled") return;
+
+    const normalizedDocuments = result.value.documents.map((document) => ({
+      name: document.original_name,
+      previewUrl: "",
+      mimeType: document.mime_type || "",
+      s3Key: document.s3_key,
+      encryptionIv: document.encryption_iv || "",
+      encryptionTag: document.encryption_tag || "",
+      uploadedAt: document.uploaded_at || ""
+    }));
+
+    const caseIndex = state.cases.findIndex((entry) => String(entry.id) === result.value.caseId);
+    if (caseIndex < 0) return;
+
+    const currentDocs = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
+    const currentSignature = JSON.stringify(currentDocs.map((doc) => [doc.name, doc.s3Key, doc.uploadedAt]));
+    const nextSignature = JSON.stringify(normalizedDocuments.map((doc) => [doc.name, doc.s3Key, doc.uploadedAt]));
+
+    if (currentSignature === nextSignature) return;
+
+    state.cases[caseIndex] = {
+      ...state.cases[caseIndex],
+      uploadedDocuments: normalizedDocuments
+    };
+    hasUpdates = true;
+  });
+
+  if (!hasUpdates) return;
+
+  state.documents = state.cases.reduce(
+    (total, entry) => total + (Array.isArray(entry.uploadedDocuments) ? entry.uploadedDocuments.length : 0),
+    0
+  );
+  writeStoredCases(state.cases);
+  render();
+}
 
 function normalizeName(value) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
