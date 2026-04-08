@@ -8,8 +8,11 @@ const loggedInUserName = document.getElementById("loggedInUserName");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const billingBtn = document.getElementById("billingBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const usersSearchForm = document.getElementById("usersSearchForm");
+const usersSearchInput = document.getElementById("usersSearchInput");
 
 let usersState = [];
+let usersSearchQuery = "";
 
 function requireAdminSession() {
   const session = requireStaffSession();
@@ -59,6 +62,65 @@ function getRoleOptions(selectedRole) {
     .join("");
 }
 
+function normalizeSearchValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function scoreSearchMatch(query, candidate) {
+  const normalizedQuery = normalizeSearchValue(query);
+  const normalizedCandidate = normalizeSearchValue(candidate);
+
+  if (!normalizedQuery || !normalizedCandidate) return 0;
+  if (normalizedCandidate === normalizedQuery) return 160;
+  if (normalizedCandidate.startsWith(normalizedQuery)) return 120;
+
+  const wordIndex = normalizedCandidate.indexOf(` ${normalizedQuery}`);
+  if (wordIndex >= 0) return 100 - Math.min(wordIndex, 40);
+
+  const includesIndex = normalizedCandidate.indexOf(normalizedQuery);
+  if (includesIndex >= 0) return 85 - Math.min(includesIndex, 50);
+
+  return normalizedQuery
+    .split(/\s+/)
+    .filter(Boolean)
+    .reduce((score, part) => {
+      const partIndex = normalizedCandidate.indexOf(part);
+      if (partIndex >= 0) return score + 28 - Math.min(partIndex, 20);
+      if (normalizedCandidate.includes(part.slice(0, Math.max(2, part.length - 1)))) return score + 8;
+      return score;
+    }, 0);
+}
+
+function getUserSearchText(user) {
+  return [
+    user.username,
+    user.email,
+    user.role,
+    user.is_approved ? "approved" : "pending"
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getFilteredUsers() {
+  const query = normalizeSearchValue(usersSearchQuery);
+  if (!query) return usersState.slice();
+
+  return usersState
+    .map((user) => ({
+      user,
+      score: scoreSearchMatch(query, getUserSearchText(user))
+    }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return String(left.user.username || left.user.email || "").localeCompare(
+        String(right.user.username || right.user.email || "")
+      );
+    })
+    .map((item) => item.user);
+}
+
 function renderUsers() {
   if (!usersList) return;
 
@@ -79,12 +141,29 @@ function renderUsers() {
     return;
   }
 
+  const filteredUsers = getFilteredUsers();
   const pendingCount = usersState.filter((user) => !user.is_approved || user.role === "pending").length;
+
   if (usersStatus) {
-    usersStatus.textContent = `${usersState.length} users loaded. ${pendingCount} waiting for approval.`;
+    const prefix = usersSearchQuery.trim()
+      ? `${filteredUsers.length} matching user(s). `
+      : `${usersState.length} users loaded. `;
+    usersStatus.textContent = `${prefix}${pendingCount} waiting for approval.`;
   }
 
-  usersState.forEach((user) => {
+  if (!filteredUsers.length) {
+    usersList.innerHTML = `
+      <li class="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-6 text-sm text-slate-500">
+        <div>
+          <strong>No matching users found.</strong>
+          <p class="mt-2">Try a broader username, email, or role search.</p>
+        </div>
+      </li>
+    `;
+    return;
+  }
+
+  filteredUsers.forEach((user) => {
     const isPending = !user.is_approved || user.role === "pending";
     const li = document.createElement("li");
     li.dataset.userId = user.id;
@@ -229,6 +308,14 @@ if (logoutBtn) {
     if (!window.confirm("Are you sure you want to log out?")) return;
     clearStoredSession();
     window.location.href = "login.html";
+  });
+}
+
+if (usersSearchForm && usersSearchInput) {
+  usersSearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    usersSearchQuery = usersSearchInput.value || "";
+    renderUsers();
   });
 }
 

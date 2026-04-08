@@ -61,6 +61,25 @@
             </div>
             <a href="index.html" class="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Back to Dashboard</a>
           </div>
+          <form id="clientsSearchForm" class="list-search-bar mb-5" role="search">
+            <label for="clientsSearchInput" class="sr-only">Search clients</label>
+            <div class="list-search-input-wrap">
+              <span class="list-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <path d="m20 20-3.5-3.5"></path>
+                </svg>
+              </span>
+              <input
+                id="clientsSearchInput"
+                type="search"
+                class="list-search-input"
+                placeholder="Search by client name, email, phone, or address"
+                autocomplete="off"
+              />
+            </div>
+            <button type="submit" class="list-search-button">Search</button>
+          </form>
           <ul id="clientsList" class="list space-y-3"></ul>
         </section>
       </main>
