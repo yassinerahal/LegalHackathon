@@ -866,6 +866,26 @@ function renderCaseDetails(entry) {
         dropField.appendChild(dropHint);
       }
 
+      if (canEditCurrentCase) {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.className = "hidden file-input-target";
+        input.accept = SUPPORTED_UPLOAD_ACCEPT;
+        input.dataset.placeholderFileInput = String(doc.id);
+        input.dataset.docDropIndex = String(index);
+
+        const addFileBtn = document.createElement("button");
+        addFileBtn.type = "button";
+        addFileBtn.className =
+          "mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+        addFileBtn.dataset.addPlaceholderFile = String(doc.id);
+        addFileBtn.dataset.docDropIndex = String(index);
+        addFileBtn.innerHTML = '<span aria-hidden="true">+</span><span>Add File</span>';
+
+        dropField.appendChild(addFileBtn);
+        dropField.appendChild(input);
+      }
+
       content.appendChild(label);
       content.appendChild(dropField);
 
@@ -997,6 +1017,74 @@ async function linkUploadedToPlaceholder(documentMeta, placeholderIndex) {
   } catch (error) {
     console.error("Failed to link placeholder:", error);
     window.alert(error.message || "Failed to link placeholder.");
+  }
+}
+
+async function uploadFilesToPlaceholder(placeholderIndex, files) {
+  const { supportedFiles, unsupportedFiles } = splitDetailUploadFiles(files);
+  if (unsupportedFiles.length) {
+    showDetailToast(`Unsuccessful - ${unsupportedFiles.join(", ")}`, "error");
+  }
+  if (!supportedFiles.length) return;
+
+  const { cases, index } = getCurrentCaseAndIndex();
+  if (index < 0) return;
+  const placeholder = (cases[index].requiredDocuments || [])[placeholderIndex];
+  if (!placeholder) return;
+
+  try {
+    const currentDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
+
+    for (const selectedFile of supportedFiles) {
+      const uploadData = await uploadFile(selectedFile);
+      const placeholderUploadResult = await uploadPlaceholderVersion(currentCaseId, placeholder.id, {
+        original_name: selectedFile.name,
+        s3_key: uploadData.filePath,
+        mime_type: selectedFile.type || "application/octet-stream",
+        encryption_iv: uploadData.encryption_iv,
+        encryption_tag: uploadData.encryption_tag
+      });
+
+      const version = placeholderUploadResult?.version || {};
+
+      currentDocs.push({
+        name: version.original_name || selectedFile.name,
+        previewUrl: "",
+        mimeType: version.mime_type || selectedFile.type || "",
+        s3Key: version.s3_key || uploadData.filePath,
+        encryptionIv: version.encryption_iv || uploadData.encryption_iv || "",
+        encryptionTag: version.encryption_tag || uploadData.encryption_tag || "",
+        uploadedAt: version.uploaded_at || ""
+      });
+
+      if (placeholderUploadResult?.placeholder) {
+        const refreshedCases = readCases();
+        const refreshedIndex = refreshedCases.findIndex((entry) => String(entry.id) === String(currentCaseId));
+        if (refreshedIndex >= 0) {
+          const currentRequired = [...(refreshedCases[refreshedIndex].requiredDocuments || [])];
+          currentRequired[placeholderIndex] = normalizePlaceholder(placeholderUploadResult.placeholder);
+          refreshedCases[refreshedIndex] = {
+            ...refreshedCases[refreshedIndex],
+            requiredDocuments: currentRequired
+          };
+          writeCases(refreshedCases);
+        }
+      }
+    }
+
+    const refreshedCases = readCases();
+    const refreshedIndex = refreshedCases.findIndex((entry) => entry.id === currentCaseId);
+    if (refreshedIndex >= 0) {
+      refreshedCases[refreshedIndex] = {
+        ...refreshedCases[refreshedIndex],
+        uploadedDocuments: currentDocs
+      };
+      writeCases(refreshedCases);
+      renderCaseDetails(refreshedCases[refreshedIndex]);
+    }
+  } catch (error) {
+    console.error("Failed to upload files for placeholder:", error);
+    window.alert(error.message || "Failed to upload files for this placeholder.");
   }
 }
 
@@ -1241,62 +1329,7 @@ requiredDocsList.addEventListener("drop", (event) => {
 
   const droppedFiles = Array.from(event.dataTransfer.files || []);
   if (droppedFiles.length) {
-    (async () => {
-      try {
-        const currentDocs = normalizeUploadedDocuments(cases[index].uploadedDocuments);
-
-        for (const droppedFile of droppedFiles) {
-          const uploadData = await uploadFile(droppedFile);
-          const placeholderUploadResult = await uploadPlaceholderVersion(currentCaseId, placeholder.id, {
-            original_name: droppedFile.name,
-            s3_key: uploadData.filePath,
-            mime_type: droppedFile.type || "application/octet-stream",
-            encryption_iv: uploadData.encryption_iv,
-            encryption_tag: uploadData.encryption_tag
-          });
-
-          const version = placeholderUploadResult?.version || {};
-
-          currentDocs.push({
-            name: version.original_name || droppedFile.name,
-            previewUrl: "",
-            mimeType: version.mime_type || droppedFile.type || "",
-            s3Key: version.s3_key || uploadData.filePath,
-            encryptionIv: version.encryption_iv || uploadData.encryption_iv || "",
-            encryptionTag: version.encryption_tag || uploadData.encryption_tag || "",
-            uploadedAt: version.uploaded_at || ""
-          });
-
-          if (placeholderUploadResult?.placeholder) {
-            const refreshedCases = readCases();
-            const refreshedIndex = refreshedCases.findIndex((entry) => String(entry.id) === String(currentCaseId));
-            if (refreshedIndex >= 0) {
-              const currentRequired = [...(refreshedCases[refreshedIndex].requiredDocuments || [])];
-              currentRequired[placeholderIndex] = normalizePlaceholder(placeholderUploadResult.placeholder);
-              refreshedCases[refreshedIndex] = {
-                ...refreshedCases[refreshedIndex],
-                requiredDocuments: currentRequired
-              };
-              writeCases(refreshedCases);
-            }
-          }
-        }
-
-        const refreshedCases = readCases();
-        const refreshedIndex = refreshedCases.findIndex((entry) => entry.id === currentCaseId);
-        if (refreshedIndex >= 0) {
-          refreshedCases[refreshedIndex] = {
-            ...refreshedCases[refreshedIndex],
-            uploadedDocuments: currentDocs
-          };
-          writeCases(refreshedCases);
-          renderCaseDetails(refreshedCases[refreshedIndex]);
-        }
-      } catch (error) {
-        console.error("Failed to auto-upload files for placeholder:", error);
-        window.alert(error.message || "Failed to upload files for this placeholder.");
-      }
-    })();
+    uploadFilesToPlaceholder(placeholderIndex, droppedFiles);
     return;
   }
 
@@ -1335,9 +1368,27 @@ requiredDocsList.addEventListener("click", (event) => {
     return;
   }
 
+  const addFileBtn = event.target.closest("[data-add-placeholder-file]");
+  if (addFileBtn) {
+    const dropField = addFileBtn.closest(".doc-drop-field");
+    const fileInput = dropField?.querySelector("[data-placeholder-file-input]");
+    fileInput?.click();
+    return;
+  }
+
   const removeBtn = event.target.closest("[data-remove-placeholder-id]");
   if (!removeBtn) return;
   removePlaceholderFromCase(removeBtn.dataset.removePlaceholderId);
+});
+
+requiredDocsList.addEventListener("change", (event) => {
+  const fileInput = event.target.closest("[data-placeholder-file-input]");
+  if (!fileInput) return;
+  const placeholderIndex = Number(fileInput.dataset.docDropIndex);
+  const files = Array.from(fileInput.files || []);
+  fileInput.value = "";
+  if (Number.isNaN(placeholderIndex) || !files.length) return;
+  uploadFilesToPlaceholder(placeholderIndex, files);
 });
 
 detailAddDocPlaceholderBtn.addEventListener("click", addRequiredPlaceholder);
