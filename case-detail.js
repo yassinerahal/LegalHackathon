@@ -137,8 +137,10 @@ function renderLoggedInUser() {
     if (!raw) return;
     const session = JSON.parse(raw);
     loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+    updateNavbarAuthUi();
   } catch (error) {
     loggedInUserName.textContent = "";
+    updateNavbarAuthUi();
   }
 }
 

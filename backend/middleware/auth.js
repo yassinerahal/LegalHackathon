@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const prisma = require("../prisma");
 require("dotenv").config();
 
 function getBearerToken(req) {
@@ -28,7 +29,66 @@ function requireAuth(req, res, next) {
   }
 }
 
+function requireCaseEditAccess(req, res, next) {
+  return requireAuth(req, res, async () => {
+    try {
+      const caseId = Number(req.params.id || req.params.case_id);
+      if (!Number.isInteger(caseId) || caseId <= 0) {
+        return res.status(400).json({ error: "Invalid case id" });
+      }
+
+      const entry = await prisma.case.findUnique({
+        where: { id: caseId },
+        select: {
+          id: true,
+          owner_id: true,
+          case_assignments: {
+            select: { user_id: true }
+          }
+        }
+      });
+
+      if (!entry) {
+        return res.status(404).json({ error: "Case not found" });
+      }
+
+      if (req.auth.role === "admin") {
+        req.caseAccess = {
+          id: entry.id,
+          owner_id: entry.owner_id,
+          isOwner: String(entry.owner_id || "") === String(req.auth.id),
+          isAssigned: entry.case_assignments.some((assignment) => String(assignment.user_id) === String(req.auth.id)),
+          canEdit: true
+        };
+        return next();
+      }
+
+      const isOwner = String(entry.owner_id || "") === String(req.auth.id);
+      const isAssigned = entry.case_assignments.some(
+        (assignment) => String(assignment.user_id) === String(req.auth.id)
+      );
+
+      if (!isOwner && !isAssigned) {
+        return res.status(403).json({ error: "You do not have edit access to this case" });
+      }
+
+      req.caseAccess = {
+        id: entry.id,
+        owner_id: entry.owner_id,
+        isOwner,
+        isAssigned,
+        canEdit: true
+      };
+      return next();
+    } catch (error) {
+      console.error("Case access check failed:", error);
+      return res.status(500).json({ error: "Failed to verify case access" });
+    }
+  });
+}
+
 module.exports = {
   getBearerToken,
-  requireAuth
+  requireAuth,
+  requireCaseEditAccess
 };

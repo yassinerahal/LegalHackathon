@@ -7,7 +7,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
-const { requireAuth } = require("./middleware/auth");
+const { requireAuth, requireCaseEditAccess } = require("./middleware/auth");
 const { seedDemoData } = require("./prisma/seed");
 let QRCode = null;
 const prisma = require("./prisma");
@@ -595,7 +595,7 @@ function buildCaseAccessFlags(entry, userId, role) {
   const canView =
     role === "admin" ||
     role === "lawyer" ||
-    (role === "assistant" && (isOwner || isAssigned));
+    (role === "assistant" && isAssigned);
   const canEdit =
     role === "admin" ||
     (role === "lawyer" && (isOwner || isAssigned)) ||
@@ -607,34 +607,6 @@ function buildCaseAccessFlags(entry, userId, role) {
     canView,
     canEdit
   };
-}
-
-function requireCaseEditAccess(req, res, next) {
-  return requireStaffAuth(req, res, async () => {
-    try {
-      const caseAccess = await getCaseAccessRow(req.params.id, req.auth.id);
-      if (!caseAccess) {
-        return res.status(404).json({ error: "Case not found" });
-      }
-
-      const isOwner = String(caseAccess.owner_id || "") === String(req.auth.id);
-      const isAssigned = Boolean(caseAccess.is_assigned);
-      const canEdit =
-        req.auth.role === "admin" ||
-        (req.auth.role === "lawyer" && (isOwner || isAssigned)) ||
-        (req.auth.role === "assistant" && isAssigned);
-
-      if (!canEdit) {
-        return res.status(403).json({ error: "You do not have edit access to this case" });
-      }
-
-      req.caseAccess = { ...caseAccess, isOwner, isAssigned, canEdit };
-      return next();
-    } catch (error) {
-      console.error("Case access check failed:", error);
-      return res.status(500).json({ error: "Failed to verify case access" });
-    }
-  });
 }
 
 function requireCaseOwnerOrAdmin(req, res, next) {
@@ -1485,16 +1457,11 @@ app.post("/api/clients", requireStaffAuth, async (req, res) => {
 
 app.get("/api/cases", requireStaffAuth, async (req, res) => {
   try {
-    const cases = await prisma.case.findMany({
-      where:
-        req.auth.role === "assistant"
-          ? {
-              OR: [
-                { owner_id: Number(req.auth.id) },
-                { case_assignments: { some: { user_id: Number(req.auth.id) } } }
-              ]
-            }
-          : undefined,
+    const requestedFilter = String(req.query.filter || "all").trim().toLowerCase();
+    console.log("User Role:", req.user.role);
+    console.log("Query Filter:", req.query.filter);
+
+    const queryOptions = {
       include: {
         client: { select: { full_name: true } },
         owner: { select: { username: true, full_name: true } },
@@ -1506,7 +1473,23 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
         case_placeholders: { select: { id: true } }
       },
       orderBy: { created_at: "desc" }
-    });
+    };
+
+    if (req.user.role === "lawyer" && requestedFilter === "my-cases") {
+      queryOptions.where = {
+        OR: [
+          { owner_id: Number(req.user.id) },
+          { case_assignments: { some: { user_id: Number(req.user.id) } } }
+        ]
+      };
+      console.log("Applying Lawyer My-Cases Filter:", queryOptions.where);
+    } else if (req.user.role === "assistant") {
+      queryOptions.where = {
+        case_assignments: { some: { user_id: Number(req.user.id) } }
+      };
+    }
+
+    const cases = await prisma.case.findMany(queryOptions);
 
     res.json(
       cases.map((entry) => {

@@ -51,6 +51,39 @@ function getSessionToken() {
   return localStorage.getItem(STORED_JWT_KEY) || getStoredSession()?.token || "";
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const payload = String(token || "").split(".")[1] || "";
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return JSON.parse(atob(padded));
+  } catch (error) {
+    return null;
+  }
+}
+
+function getAuthUser() {
+  return decodeJwtPayload(getSessionToken());
+}
+
+function updateNavbarAuthUi() {
+  const authUser = getAuthUser();
+  const usersLink = document.getElementById("nav-users-link");
+  const roleLabel = document.getElementById("nav-user-role");
+
+  if (usersLink) {
+    usersLink.classList.add("hidden");
+    if (authUser?.role === "admin") {
+      usersLink.classList.remove("hidden");
+    }
+  }
+
+  if (roleLabel) {
+    roleLabel.textContent = authUser?.role ? String(authUser.role).toUpperCase() : "";
+  }
+}
+
 function isFirmRole(role) {
   return ["admin", "lawyer", "assistant"].includes(role);
 }
@@ -156,8 +189,11 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
-async function getCases() {
-  return apiRequest("/cases");
+async function getCases(filter = "all") {
+  const normalizedFilter = filter === "my-cases" ? "my-cases" : "all";
+  const query = normalizedFilter === "all" ? "" : `?filter=${encodeURIComponent(normalizedFilter)}`;
+  console.log("Frontend sending filter:", normalizedFilter);
+  return apiRequest(`/cases${query}`);
 }
 
 async function getCaseById(id) {

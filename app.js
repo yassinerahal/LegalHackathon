@@ -36,6 +36,7 @@ const casePatternAdminCard = document.getElementById("casePatternAdminCard");
 const casePatternInput = document.getElementById("casePatternInput");
 const casePatternStatus = document.getElementById("casePatternStatus");
 const saveCasePatternBtn = document.getElementById("saveCasePatternBtn");
+const lawyerCaseFilter = document.getElementById("lawyerCaseFilter");
 
 const quickAddModal = document.getElementById("quickAddModal");
 const modalTitle = document.getElementById("modalTitle");
@@ -82,6 +83,7 @@ let pendingQuickUploadFiles = [];
 let assignableCaseUsers = [];
 let selectedCaseAssigneeIds = new Set();
 let toastTimeouts = new WeakMap();
+let currentCaseFilter = "all";
 const SESSION_KEY = "nextact_current_user";
 const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
@@ -173,8 +175,10 @@ function renderLoggedInUser() {
     if (!raw) return;
     const session = JSON.parse(raw);
     loggedInUserName.textContent = session.name ? `Hello, ${session.name}` : "";
+    updateNavbarAuthUi();
   } catch (error) {
     loggedInUserName.textContent = "";
+    updateNavbarAuthUi();
   }
 }
 
@@ -263,14 +267,30 @@ function renderCasePatternAdminCard(session = getStoredSession()) {
   }`;
 }
 
+function renderLawyerCaseFilter(session = getStoredSession()) {
+  if (!lawyerCaseFilter) return;
+  const isLawyer = session?.role === "lawyer";
+  lawyerCaseFilter.classList.toggle("hidden", !isLawyer);
+  if (!isLawyer) return;
+
+  lawyerCaseFilter.querySelectorAll("[data-filter]").forEach((button) => {
+    const isActive = button.dataset.filter === currentCaseFilter;
+    button.classList.toggle("bg-white", isActive);
+    button.classList.toggle("shadow-sm", isActive);
+    button.classList.toggle("text-slate-800", isActive);
+    button.classList.toggle("text-slate-500", !isActive);
+  });
+}
+
 async function initDashboard() {
   const session = requireSession();
   if (!session) return;
   applyTheme(readTheme());
   renderLoggedInUser();
+  currentCaseFilter = session.role === "lawyer" ? "my-cases" : "all";
   ensureUploadInputHints();
   try {
-    const requests = [getCases(), getClients(), getCasePatternSetting()];
+    const requests = [getCases(currentCaseFilter), getClients(), getCasePatternSetting()];
     if (session.role === "admin" || session.role === "lawyer") {
       requests.push(getAssignableUsers());
     }
@@ -577,11 +597,55 @@ function renderClients() {
 
 function render() {
   renderCasePatternAdminCard();
+  renderLawyerCaseFilter();
   renderStats();
   renderCases();
   renderDeadlines();
   renderClients();
   renderQuickUploadCaseOptions();
+}
+
+async function reloadCases(filter = currentCaseFilter) {
+  const session = getStoredSession();
+  if (!session) return;
+  currentCaseFilter = filter === "my-cases" ? "my-cases" : "all";
+
+  const cases = await getCases(currentCaseFilter);
+  const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
+
+  state.cases = cases.map((entry) => ({
+    id: entry.id,
+    title: entry.name,
+    caseNumber: entry.case_number || "",
+    stage: entry.short_description || "No description",
+    client_id: entry.client_id,
+    owner_id: entry.owner_id || null,
+    clientNames: entry.client_name ? [entry.client_name] : [],
+    status: entry.status || "open",
+    can_edit: Boolean(entry.can_edit),
+    is_owner: Boolean(entry.is_owner),
+    is_assigned: Boolean(entry.is_assigned),
+    deadline: entry.deadline || "",
+    comments: storedCasesById.get(String(entry.id))?.comments || [],
+    requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
+    uploadedDocuments: normalizeUploadedDocuments(
+      storedCasesById.get(String(entry.id))?.uploadedDocuments || []
+    )
+  }));
+
+  state.deadlines = state.cases
+    .filter((entry) => entry.deadline)
+    .map((entry) => ({
+      title: `${entry.title} deadline`,
+      date: entry.deadline
+    }));
+
+  state.documents = state.cases.reduce(
+    (total, entry) => total + normalizeUploadedDocuments(entry.uploadedDocuments).length,
+    0
+  );
+
+  render();
 }
 
 function renderQuickUploadCaseOptions() {
@@ -1017,6 +1081,24 @@ if (viewAllCasesBtn) {
 if (viewAllClientsBtn) {
   viewAllClientsBtn.addEventListener("click", () => {
     window.location.href = "clients.html";
+  });
+}
+
+if (lawyerCaseFilter) {
+  lawyerCaseFilter.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-filter]");
+    if (!button) return;
+
+    const nextFilter = button.dataset.filter === "my-cases" ? "my-cases" : "all";
+    if (nextFilter === currentCaseFilter) return;
+    console.log("Frontend sending filter:", nextFilter);
+
+    try {
+      await reloadCases(nextFilter);
+    } catch (error) {
+      console.error("Failed to reload cases with lawyer filter:", error);
+      showToast(error.message || "Failed to apply case filter.", "error");
+    }
   });
 }
 
