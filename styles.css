@@ -1276,38 +1276,40 @@ body.dark-mode .drop-zone-browse {
 }
 
 .uploaded-file-boxes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
   margin-top: 0.25rem;
 }
 
 .uploaded-file-box {
   border: 1px solid color-mix(in srgb, var(--line-strong) 78%, var(--line) 22%);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--card-strong) 78%, var(--primary-soft) 22%);
-  padding: 0.9rem 0.9rem 0.8rem;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--card-strong) 92%, var(--primary-soft) 8%);
+  padding: 0.85rem 1rem;
   font-size: 0.82rem;
   cursor: grab;
   user-select: none;
   display: grid;
-  gap: 0.7rem;
-  width: 180px;
-  text-align: center;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  text-align: left;
   position: relative;
   box-shadow: var(--shadow-soft);
-  align-content: start;
 }
 
 .uploaded-file-thumb {
-  width: 100%;
-  height: 92px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--card-strong) 94%, #ffffff 6%);
+  border-radius: 14px;
+  background: color-mix(in srgb, #fff1f2 88%, #ffffff 12%);
   display: grid;
   place-items: center;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .uploaded-file-thumb-image {
@@ -1317,9 +1319,10 @@ body.dark-mode .drop-zone-browse {
 }
 
 .uploaded-file-thumb-label {
-  font-size: 1rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--primary-dark) 72%, var(--muted) 28%);
+  color: #dc2626;
+  letter-spacing: 0.05em;
 }
 
 .uploaded-file-copy {
@@ -1328,11 +1331,11 @@ body.dark-mode .drop-zone-browse {
 
 .uploaded-file-name {
   display: block;
-  line-height: 1.35;
+  line-height: 1.4;
   color: color-mix(in srgb, var(--text) 86%, var(--muted) 14%);
   overflow-wrap: anywhere;
-  text-align: center;
-  min-height: 2.7em;
+  text-align: left;
+  min-height: 0;
 }
 
 .uploaded-file-box:active {
@@ -1340,11 +1343,9 @@ body.dark-mode .drop-zone-browse {
 }
 
 .uploaded-file-remove {
-  position: absolute;
-  top: -10px;
-  right: -10px;
-  width: 42px;
-  height: 42px;
+  position: static;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--card-strong);
@@ -1352,6 +1353,18 @@ body.dark-mode .drop-zone-browse {
   font-size: 0.82rem;
   line-height: 1;
   padding: 0;
+}
+
+@media (max-width: 720px) {
+  .uploaded-file-box {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .uploaded-file-box > :last-child {
+    grid-column: 2;
+    justify-content: flex-start;
+    margin-top: 0.25rem;
+  }
 }
 
 .context-menu {

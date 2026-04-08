@@ -339,7 +339,7 @@ function getFileExtension(name) {
   return name.slice(dotIndex + 1).toUpperCase();
 }
 
-function getShortDisplayFileName(name) {
+function getShortDisplayFileName(name, maxBaseLength = 10) {
   const safeName = String(name || "").trim();
   if (!safeName) return "file";
 
@@ -348,11 +348,11 @@ function getShortDisplayFileName(name) {
   const extension = hasExtension ? safeName.slice(dotIndex) : "";
   const baseName = hasExtension ? safeName.slice(0, dotIndex) : safeName;
 
-  if (baseName.length <= 10) {
+  if (baseName.length <= maxBaseLength) {
     return `${baseName}${extension}`;
   }
 
-  return `${baseName.slice(0, 10)}...${extension}`;
+  return `${baseName.slice(0, maxBaseLength)}...${extension}`;
 }
 
 function getFileIcon(filename) {
@@ -732,10 +732,9 @@ function renderCaseDetails(entry) {
   } else {
     detailFileCount.textContent = `${uploadedDocs.length} uploaded file(s) in this case.`;
     uploadedDocs.forEach((file) => {
-      const card = document.createElement("button");
-      card.type = "button";
+      const card = document.createElement("div");
       card.className =
-        "uploaded-file-box rounded-[22px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg";
+        "uploaded-file-box grid items-center gap-3 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 hover:shadow-md md:grid-cols-[auto_minmax(0,2.2fr)_minmax(0,1.1fr)_auto]";
       card.draggable = true;
       card.dataset.fileName = file.name;
       card.dataset.previewUrl = file.previewUrl || "";
@@ -744,7 +743,7 @@ function renderCaseDetails(entry) {
       card.dataset.encryptionIv = file.encryptionIv || "";
       card.dataset.encryptionTag = file.encryptionTag || "";
       const thumb = document.createElement("div");
-      thumb.className = "uploaded-file-thumb";
+      thumb.className = "uploaded-file-thumb flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-red-50";
       if (isImageFile(file) && file.previewUrl) {
         const image = document.createElement("img");
         image.className = "uploaded-file-thumb-image";
@@ -753,28 +752,43 @@ function renderCaseDetails(entry) {
         thumb.appendChild(image);
       } else {
         const label = document.createElement("span");
-        label.className = "uploaded-file-thumb-label";
+        label.className = "uploaded-file-thumb-label text-[11px] font-bold tracking-wide text-red-600";
         label.textContent = getFileExtension(file.name);
         thumb.appendChild(label);
       }
       const name = document.createElement("div");
-      name.className = "uploaded-file-copy";
+      name.className = "uploaded-file-copy min-w-0";
       name.title = file.name;
       name.innerHTML = `
-        <span class="uploaded-file-name block text-sm font-semibold text-slate-700">${getShortDisplayFileName(file.name)}</span>
+        <span class="uploaded-file-name block text-sm font-medium text-slate-800">${getShortDisplayFileName(file.name, 30)}</span>
+        <span class="mt-1 block text-xs text-slate-500">${file.uploadedAt ? formatHistoryDateTime(file.uploadedAt) : "No upload date"}</span>
+        <span class="mt-1 block text-xs text-slate-400">${file.placeholderName ? `Linked to ${file.placeholderName}` : "General case document"}</span>
       `;
+
+      const actions = document.createElement("div");
+      actions.className = "flex items-center justify-end gap-2";
+
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.className =
+        "doc-download-link rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50";
+      downloadBtn.dataset.s3Key = file.s3Key || "";
+      downloadBtn.dataset.fileName = file.name || "file";
+      downloadBtn.textContent = "Download";
 
       card.appendChild(thumb);
       card.appendChild(name);
+      actions.appendChild(downloadBtn);
       if (canEditCurrentCase) {
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className =
-          "uploaded-file-remove ml-auto flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-500";
+          "uploaded-file-remove flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-500";
         removeBtn.dataset.removeFileName = file.name;
         removeBtn.textContent = "x";
-        card.appendChild(removeBtn);
+        actions.appendChild(removeBtn);
       }
+      card.appendChild(actions);
       uploadedDocumentsGrid.appendChild(card);
     });
   }
@@ -1115,6 +1129,16 @@ uploadedDocumentsGrid.addEventListener("dragstart", (event) => {
 });
 
 uploadedDocumentsGrid.addEventListener("click", (event) => {
+  const downloadBtn = event.target.closest(".doc-download-link");
+  if (downloadBtn) {
+    event.preventDefault();
+    triggerDocumentDownload({
+      original_name: downloadBtn.dataset.fileName || "file",
+      s3_key: downloadBtn.dataset.s3Key || ""
+    });
+    return;
+  }
+
   const removeBtn = event.target.closest("[data-remove-file-name]");
   if (removeBtn) {
     removeFileFromCase(removeBtn.dataset.removeFileName);
