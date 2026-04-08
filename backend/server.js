@@ -8,6 +8,7 @@ const multer = require("multer");
 const { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { bucketName, ensureStorageReady, initStorage, s3Client } = require("./s3");
 const { requireAuth } = require("./middleware/auth");
+const { seedDemoData } = require("./prisma/seed");
 let QRCode = null;
 const prisma = require("./prisma");
 require("dotenv").config();
@@ -21,6 +22,7 @@ const BOOTSTRAP_ADMIN_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || "admin"
 const BOOTSTRAP_ADMIN_EMAIL = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@nextact.local").trim().toLowerCase();
 const BOOTSTRAP_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD || "Admin123!";
 const CASE_NUMBER_SETTING_KEY = "CASE_NUMBER_CONFIG";
+const SEED_DEMO_DATA = String(process.env.SEED_DEMO_DATA || "false").toLowerCase() === "true";
 
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET must be set in the backend environment.");
@@ -2057,6 +2059,7 @@ app.post("/api/auth/login", async (req, res) => {
 
 ensureRemoteAccessSchema()
   .then(() => ensureBootstrapAdmin())
+  .then(() => (SEED_DEMO_DATA ? seedDemoData() : null))
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Backend running on port ${PORT}`);

@@ -9,6 +9,8 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    environment:
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
     depends_on:
       - postgres # Ensure database is running before backend starts
       - localstack # Ensure storage is running before backend starts

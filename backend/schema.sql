@@ -39,6 +39,7 @@ CREATE TABLE remote_access_tokens (
 CREATE TABLE cases (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    case_number VARCHAR(255) UNIQUE NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'open',
@@ -68,8 +69,18 @@ CREATE TABLE document_versions (
     original_name VARCHAR(255) NOT NULL,
     s3_key VARCHAR(500) UNIQUE NOT NULL,
     mime_type VARCHAR(100),
+    encryption_iv VARCHAR(255),
+    encryption_tag VARCHAR(255),
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE system_settings (
+    id SERIAL PRIMARY KEY,
+    setting_key VARCHAR(255) UNIQUE NOT NULL,
+    pattern VARCHAR(255),
+    current_sequence INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Billing / cost tracking (optional future API; UI may use localStorage until wired)
