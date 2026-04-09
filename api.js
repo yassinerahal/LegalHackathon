@@ -315,6 +315,13 @@ async function uploadFile(file) {
   });
 }
 
+async function uploadDashboardDocument(formData) {
+  return apiRequest("/dashboard/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
 async function linkCaseDocument(caseId, payload) {
   return apiRequest(`/cases/${encodeURIComponent(caseId)}/documents`, {
     method: "POST",

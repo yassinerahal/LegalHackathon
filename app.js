@@ -23,13 +23,18 @@ const viewAllClientsBtn = document.getElementById("viewAllClientsBtn");
 const newCaseMainBtn = document.getElementById("newCaseMainBtn");
 const loggedInUserName = document.getElementById("loggedInUserName");
 const quickUploadDropZone = document.getElementById("quickUploadDropZone");
-const quickUploadDocuments = document.getElementById("quickUploadDocuments");
+const quickUploadOpenBtn = document.getElementById("quickUploadOpenBtn");
 const quickUploadStatus = document.getElementById("quickUploadStatus");
-const assignUploadModal = document.getElementById("assignUploadModal");
+const assignUploadModal = document.getElementById("quick-upload-modal");
 const assignUploadFileCount = document.getElementById("assignUploadFileCount");
-const assignUploadCaseSelect = document.getElementById("assignUploadCaseSelect");
+const assignUploadCaseSelect = document.getElementById("modal-case-select");
+const assignUploadStep2Container = document.getElementById("step-2-container");
+const assignUploadStep3Container = document.getElementById("step-3-container");
+const assignUploadPlaceholderSelect = document.getElementById("modal-placeholder-select");
+const assignUploadNewPlaceholderName = document.getElementById("modal-new-placeholder-name");
+const assignUploadFileInput = document.getElementById("modal-file-input");
 const cancelAssignUploadBtn = document.getElementById("cancelAssignUploadBtn");
-const confirmAssignUploadBtn = document.getElementById("confirmAssignUploadBtn");
+const confirmAssignUploadBtn = document.getElementById("modal-submit-btn");
 const toggleDarkModeBtn = document.getElementById("toggleDarkModeBtn");
 const casePatternWarning = document.getElementById("casePatternWarning");
 const casePatternAdminCard = document.getElementById("casePatternAdminCard");
@@ -89,7 +94,7 @@ const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
 function ensureUploadInputHints() {
-  [quickUploadDocuments, caseDocuments].forEach((input) => {
+  [assignUploadFileInput, caseDocuments].forEach((input) => {
     if (input) {
       input.setAttribute("accept", SUPPORTED_UPLOAD_ACCEPT);
     }
@@ -303,25 +308,34 @@ async function initDashboard() {
       session.role === "admin" || session.role === "lawyer" ? responses.shift() || [] : [];
     const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
 
-    state.cases = cases.map((entry) => ({
-      id: entry.id,
-      title: entry.name,
-      caseNumber: entry.case_number || "",
-      stage: entry.short_description || "No description",
-      client_id: entry.client_id,
-      owner_id: entry.owner_id || null,
-      clientNames: entry.client_name ? [entry.client_name] : [],
-      status: entry.status || "open",
-      can_edit: Boolean(entry.can_edit),
-      is_owner: Boolean(entry.is_owner),
-      is_assigned: Boolean(entry.is_assigned),
-      deadline: entry.deadline || "",
-      comments: storedCasesById.get(String(entry.id))?.comments || [],
-      requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
-      uploadedDocuments: normalizeUploadedDocuments(
-        storedCasesById.get(String(entry.id))?.uploadedDocuments || []
-      )
-    }));
+    state.cases = cases.map((entry) => {
+      const storedCase = storedCasesById.get(String(entry.id)) || {};
+      const resolvedPlaceholders = Array.isArray(entry.placeholders) && entry.placeholders.length
+        ? entry.placeholders
+        : Array.isArray(storedCase.requiredDocuments)
+          ? storedCase.requiredDocuments
+          : [];
+      return {
+        id: entry.id,
+        title: entry.name,
+        caseNumber: entry.case_number || "",
+        stage: entry.short_description || "No description",
+        client_id: entry.client_id,
+        owner_id: entry.owner_id || null,
+        clientNames: entry.client_name ? [entry.client_name] : [],
+        placeholders: resolvedPlaceholders,
+        status: entry.status || "open",
+        can_edit: Boolean(entry.can_edit),
+        is_owner: Boolean(entry.is_owner),
+        is_assigned: Boolean(entry.is_assigned),
+        deadline: entry.deadline || "",
+        comments: storedCase.comments || [],
+        requiredDocuments: storedCase.requiredDocuments || resolvedPlaceholders,
+        uploadedDocuments: normalizeUploadedDocuments(
+          storedCase.uploadedDocuments || []
+        )
+      };
+    });
     state.clients = clients.map((client) => ({
       id: client.id,
       name: client.full_name,
@@ -613,25 +627,34 @@ async function reloadCases(filter = currentCaseFilter) {
   const cases = await getCases(currentCaseFilter);
   const storedCasesById = new Map(readStoredCases().map((entry) => [String(entry.id), entry]));
 
-  state.cases = cases.map((entry) => ({
-    id: entry.id,
-    title: entry.name,
-    caseNumber: entry.case_number || "",
-    stage: entry.short_description || "No description",
-    client_id: entry.client_id,
-    owner_id: entry.owner_id || null,
-    clientNames: entry.client_name ? [entry.client_name] : [],
-    status: entry.status || "open",
-    can_edit: Boolean(entry.can_edit),
-    is_owner: Boolean(entry.is_owner),
-    is_assigned: Boolean(entry.is_assigned),
-    deadline: entry.deadline || "",
-    comments: storedCasesById.get(String(entry.id))?.comments || [],
-    requiredDocuments: storedCasesById.get(String(entry.id))?.requiredDocuments || [],
-    uploadedDocuments: normalizeUploadedDocuments(
-      storedCasesById.get(String(entry.id))?.uploadedDocuments || []
-    )
-  }));
+  state.cases = cases.map((entry) => {
+    const storedCase = storedCasesById.get(String(entry.id)) || {};
+    const resolvedPlaceholders = Array.isArray(entry.placeholders) && entry.placeholders.length
+      ? entry.placeholders
+      : Array.isArray(storedCase.requiredDocuments)
+        ? storedCase.requiredDocuments
+        : [];
+    return {
+      id: entry.id,
+      title: entry.name,
+      caseNumber: entry.case_number || "",
+      stage: entry.short_description || "No description",
+      client_id: entry.client_id,
+      owner_id: entry.owner_id || null,
+      clientNames: entry.client_name ? [entry.client_name] : [],
+      placeholders: resolvedPlaceholders,
+      status: entry.status || "open",
+      can_edit: Boolean(entry.can_edit),
+      is_owner: Boolean(entry.is_owner),
+      is_assigned: Boolean(entry.is_assigned),
+      deadline: entry.deadline || "",
+      comments: storedCase.comments || [],
+      requiredDocuments: storedCase.requiredDocuments || resolvedPlaceholders,
+      uploadedDocuments: normalizeUploadedDocuments(
+        storedCase.uploadedDocuments || []
+      )
+    };
+  });
 
   state.deadlines = state.cases
     .filter((entry) => entry.deadline)
@@ -651,30 +674,138 @@ async function reloadCases(filter = currentCaseFilter) {
 function renderQuickUploadCaseOptions() {
   if (!assignUploadCaseSelect) return;
   assignUploadCaseSelect.innerHTML = "";
-  const editableCases = state.cases.filter((entry) => canEditCase(getStoredSession(), entry));
-  editableCases.forEach((entry) => {
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Select a Case...";
+  defaultOption.disabled = true;
+  defaultOption.selected = true;
+  assignUploadCaseSelect.appendChild(defaultOption);
+  const authorizedCases = state.cases.filter((entry) => canEditCase(getStoredSession(), entry));
+  authorizedCases.forEach((entry) => {
     const option = document.createElement("option");
     option.value = entry.id;
-    option.textContent = entry.title;
+    option.textContent = entry.caseNumber ? `${entry.caseNumber} - ${entry.title}` : entry.title;
     assignUploadCaseSelect.appendChild(option);
   });
+
+  populateQuickUploadPlaceholderOptions();
 }
 
-function openAssignUploadModal(files) {
-  const { supportedFiles, unsupportedFiles } = splitUploadFiles(files);
-  pendingQuickUploadFiles = supportedFiles;
-  if (unsupportedFiles.length) {
-    showToast(`Unsuccessful - ${unsupportedFiles.join(", ")}`, "error");
-  }
-  if (!pendingQuickUploadFiles.length) return;
-  renderQuickUploadCaseOptions();
-  if (!assignUploadCaseSelect.options.length) {
-    quickUploadStatus.textContent = "You do not have upload access to any cases.";
-    quickUploadStatus.className = "field-note error";
-    pendingQuickUploadFiles = [];
+function populateQuickUploadPlaceholderOptions() {
+  if (!assignUploadCaseSelect || !assignUploadPlaceholderSelect) return;
+  const selectedCaseId = Number(assignUploadCaseSelect.value);
+  const selectedCase = state.cases.find((entry) => Number(entry.id) === selectedCaseId);
+
+  assignUploadPlaceholderSelect.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Select or Create Placeholder...";
+  defaultOption.disabled = true;
+  defaultOption.selected = true;
+  assignUploadPlaceholderSelect.appendChild(defaultOption);
+  assignUploadPlaceholderSelect.disabled = !selectedCase;
+
+  if (!selectedCase) {
+    if (assignUploadStep2Container) {
+      assignUploadStep2Container.classList.add("hidden");
+    }
+    if (assignUploadStep3Container) {
+      assignUploadStep3Container.classList.add("hidden");
+    }
     return;
   }
-  assignUploadFileCount.textContent = `${pendingQuickUploadFiles.length} file(s) ready to upload.`;
+
+  if (assignUploadStep2Container) {
+    assignUploadStep2Container.classList.remove("hidden");
+  }
+
+  const placeholders = Array.isArray(selectedCase?.placeholders) && selectedCase.placeholders.length
+    ? selectedCase.placeholders
+    : Array.isArray(selectedCase?.requiredDocuments)
+      ? selectedCase.requiredDocuments
+      : [];
+  placeholders.forEach((placeholder) => {
+    const option = document.createElement("option");
+    option.value = String(placeholder.id || placeholder.placeholderId || placeholder.name);
+    option.textContent = `${placeholder.name} (${placeholder.status || "Pending"})`;
+    assignUploadPlaceholderSelect.appendChild(option);
+  });
+
+  const newOption = document.createElement("option");
+  newOption.value = "NEW";
+  newOption.textContent = "+ Create New Placeholder";
+  assignUploadPlaceholderSelect.appendChild(newOption);
+  assignUploadPlaceholderSelect.value = "";
+  toggleQuickUploadNewPlaceholderField();
+}
+
+function toggleQuickUploadNewPlaceholderField() {
+  if (!assignUploadPlaceholderSelect || !assignUploadNewPlaceholderName) return;
+  const selectedValue = assignUploadPlaceholderSelect.value;
+  const isNewPlaceholder = selectedValue === "NEW";
+  assignUploadNewPlaceholderName.classList.toggle("hidden", !isNewPlaceholder);
+  if (assignUploadStep3Container) {
+    assignUploadStep3Container.classList.toggle("hidden", !selectedValue);
+  }
+}
+
+function resetUploadModal() {
+  pendingQuickUploadFiles = [];
+  if (assignUploadCaseSelect) {
+    assignUploadCaseSelect.value = "";
+  }
+  if (assignUploadPlaceholderSelect) {
+    assignUploadPlaceholderSelect.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Select or Create Placeholder...";
+    defaultOption.disabled = true;
+    defaultOption.selected = true;
+    assignUploadPlaceholderSelect.appendChild(defaultOption);
+    assignUploadPlaceholderSelect.disabled = true;
+  }
+  if (assignUploadNewPlaceholderName) {
+    assignUploadNewPlaceholderName.value = "";
+    assignUploadNewPlaceholderName.classList.add("hidden");
+  }
+  if (assignUploadFileInput) {
+    assignUploadFileInput.value = "";
+  }
+  if (assignUploadStep2Container) {
+    assignUploadStep2Container.classList.add("hidden");
+  }
+  if (assignUploadStep3Container) {
+    assignUploadStep3Container.classList.add("hidden");
+  }
+  assignUploadFileCount.textContent = "Upload a document into an existing or newly created placeholder.";
+}
+
+function openAssignUploadModal() {
+  renderQuickUploadCaseOptions();
+  if (assignUploadCaseSelect.options.length <= 1) {
+    quickUploadStatus.textContent = "You do not have upload access to any cases.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+  if (assignUploadStep2Container) {
+    assignUploadStep2Container.classList.add("hidden");
+  }
+  if (assignUploadStep3Container) {
+    assignUploadStep3Container.classList.add("hidden");
+  }
+  if (assignUploadPlaceholderSelect) {
+    assignUploadPlaceholderSelect.disabled = true;
+  }
+  if (assignUploadFileInput) {
+    assignUploadFileInput.value = "";
+  }
+  if (assignUploadNewPlaceholderName) {
+    assignUploadNewPlaceholderName.value = "";
+    assignUploadNewPlaceholderName.classList.add("hidden");
+  }
+  assignUploadFileCount.textContent = pendingQuickUploadFiles.length
+    ? `${pendingQuickUploadFiles.length} file(s) staged from drag and drop.`
+    : "Select a case, choose a placeholder, and upload a file.";
   assignUploadModal.showModal();
 }
 
@@ -688,8 +819,25 @@ async function uploadPendingFilesToCase() {
     quickUploadStatus.className = "field-note error";
     return;
   }
-  if (!pendingQuickUploadFiles.length) {
-    quickUploadStatus.textContent = "No files selected.";
+
+  if (!assignUploadPlaceholderSelect.value) {
+    quickUploadStatus.textContent = "Select a placeholder first.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  const selectedFile = assignUploadFileInput?.files?.[0] || pendingQuickUploadFiles[0];
+  if (!selectedFile) {
+    quickUploadStatus.textContent = "No file selected.";
+    quickUploadStatus.className = "field-note error";
+    return;
+  }
+
+  if (
+    assignUploadPlaceholderSelect.value === "NEW" &&
+    !String(assignUploadNewPlaceholderName?.value || "").trim()
+  ) {
+    quickUploadStatus.textContent = "Enter a name for the new placeholder.";
     quickUploadStatus.className = "field-note error";
     return;
   }
@@ -704,61 +852,77 @@ async function uploadPendingFilesToCase() {
     return;
   }
 
-  const existingDocs = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
-  const existingNames = new Set(existingDocs.map((file) => file.name));
-  let successCount = 0;
-  const failedUploads = [];
+  try {
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("case_id", String(selectedCaseId));
+    formData.append("placeholder_id", assignUploadPlaceholderSelect.value);
+    if (assignUploadPlaceholderSelect.value === "NEW") {
+      formData.append("new_placeholder_name", String(assignUploadNewPlaceholderName.value || "").trim());
+    }
 
-  for (const file of pendingQuickUploadFiles) {
-    if (!existingNames.has(file.name)) {
-      try {
-        const uploadData = await uploadFile(file);
-        const linkedDocument = await linkCaseDocument(selectedCaseId, {
-          original_name: file.name,
-          s3_key: uploadData.filePath,
-          mime_type: file.type || "application/octet-stream",
-          encryption_iv: uploadData.encryption_iv,
-          encryption_tag: uploadData.encryption_tag
-        });
+    const result = await uploadDashboardDocument(formData);
+    const uploadedDocuments = normalizeUploadedDocuments(state.cases[caseIndex].uploadedDocuments);
+    const uploadedDocument = result.document || {};
 
-        existingDocs.push({
-          name: linkedDocument.original_name,
-          previewUrl: "",
-          mimeType: linkedDocument.mime_type || file.type || "",
-          s3Key: linkedDocument.s3_key,
-          encryptionIv: linkedDocument.encryption_iv || "",
-          encryptionTag: linkedDocument.encryption_tag || "",
-          uploadedAt: linkedDocument.uploaded_at || ""
-        });
-        existingNames.add(file.name);
-        successCount++;
-      } catch (error) {
-        console.error(`Upload error for ${file.name}:`, error);
-        failedUploads.push(file.name);
+    uploadedDocuments.unshift({
+      name: uploadedDocument.original_name || selectedFile.name,
+      previewUrl: "",
+      mimeType: uploadedDocument.mime_type || selectedFile.type || "",
+      s3Key: uploadedDocument.s3_key || "",
+      encryptionIv: uploadedDocument.encryption_iv || "",
+      encryptionTag: uploadedDocument.encryption_tag || "",
+      uploadedAt: uploadedDocument.uploaded_at || ""
+    });
+
+    const placeholders = Array.isArray(state.cases[caseIndex].placeholders)
+      ? [...state.cases[caseIndex].placeholders]
+      : [];
+    if (result.placeholder) {
+      const placeholderIndex = placeholders.findIndex(
+        (entry) => Number(entry.id) === Number(result.placeholder.id)
+      );
+      const normalizedPlaceholder = {
+        id: result.placeholder.id,
+        name: result.placeholder.name,
+        status: result.placeholder.status || "Uploaded"
+      };
+
+      if (placeholderIndex >= 0) {
+        placeholders[placeholderIndex] = normalizedPlaceholder;
+      } else {
+        placeholders.push(normalizedPlaceholder);
       }
     }
-  }
 
-  state.cases[caseIndex] = {
-    ...state.cases[caseIndex],
-    uploadedDocuments: existingDocs
-  };
-  state.documents += successCount;
-  writeStoredCases(state.cases);
-  render();
+    state.cases[caseIndex] = {
+      ...state.cases[caseIndex],
+      placeholders,
+      uploadedDocuments
+    };
+    state.documents += 1;
+    writeStoredCases(state.cases);
+    render();
 
-  quickUploadDocuments.value = "";
-  quickUploadStatus.textContent = successCount > 0 ? `${successCount} file(s) uploaded.` : "No files were uploaded.";
-  quickUploadStatus.className = successCount > 0 ? "field-note success" : "field-note error";
-  if (successCount > 0) {
-    showToast(`Successful (${successCount})`, "success");
+    if (assignUploadFileInput) {
+      assignUploadFileInput.value = "";
+    }
+    pendingQuickUploadFiles = [];
+    if (assignUploadNewPlaceholderName) {
+      assignUploadNewPlaceholderName.value = "";
+    }
+    quickUploadStatus.textContent = "Document uploaded successfully.";
+    quickUploadStatus.className = "field-note success";
+    showToast("Successful (1)", "success");
+    setTimeout(() => {
+      assignUploadModal.close();
+      resetUploadModal();
+    }, 1000);
+  } catch (error) {
+    console.error("Dashboard quick upload failed:", error);
+    quickUploadStatus.textContent = error.message || "Failed to upload document.";
+    quickUploadStatus.className = "field-note error";
   }
-  if (failedUploads.length) {
-    showToast(`Unsuccessful - ${failedUploads.join(", ")}`, "error");
-  }
-  pendingQuickUploadFiles = [];
-  
-  setTimeout(() => assignUploadModal.close(), 1500);
 }
 
 function clearClientForm() {
@@ -1102,34 +1266,82 @@ if (lawyerCaseFilter) {
   });
 }
 
+if (quickUploadOpenBtn) {
+  quickUploadOpenBtn.addEventListener("click", () => {
+    pendingQuickUploadFiles = [];
+    openAssignUploadModal();
+  });
+}
+
 if (quickUploadDropZone) {
-  quickUploadDropZone.addEventListener("click", () => quickUploadDocuments.click());
+  quickUploadDropZone.addEventListener("click", (event) => {
+    if (event.target.closest("#quickUploadOpenBtn")) return;
+    pendingQuickUploadFiles = [];
+    openAssignUploadModal();
+  });
+
   quickUploadDropZone.addEventListener("dragover", (event) => {
     event.preventDefault();
-    quickUploadDropZone.classList.add("drag-active");
+    quickUploadDropZone.classList.add("ring-2", "ring-indigo-300", "bg-indigo-50/60");
   });
+
   quickUploadDropZone.addEventListener("dragleave", () => {
-    quickUploadDropZone.classList.remove("drag-active");
+    quickUploadDropZone.classList.remove("ring-2", "ring-indigo-300", "bg-indigo-50/60");
   });
+
   quickUploadDropZone.addEventListener("drop", (event) => {
     event.preventDefault();
-    quickUploadDropZone.classList.remove("drag-active");
-    openAssignUploadModal(event.dataTransfer.files);
+    quickUploadDropZone.classList.remove("ring-2", "ring-indigo-300", "bg-indigo-50/60");
+
+    const { supportedFiles, unsupportedFiles } = splitUploadFiles(event.dataTransfer?.files || []);
+    if (unsupportedFiles.length) {
+      showToast(`Unsupported file(s): ${unsupportedFiles.join(", ")}`, "error");
+    }
+
+    if (!supportedFiles.length) {
+      quickUploadStatus.textContent = "No supported files were dropped.";
+      quickUploadStatus.className = "field-note error";
+      return;
+    }
+
+    pendingQuickUploadFiles = supportedFiles;
+    if (assignUploadFileInput) {
+      assignUploadFileInput.value = "";
+    }
+    openAssignUploadModal();
   });
-  quickUploadDocuments.addEventListener("change", () => {
-    openAssignUploadModal(quickUploadDocuments.files);
+}
+
+if (assignUploadCaseSelect) {
+  assignUploadCaseSelect.addEventListener("change", populateQuickUploadPlaceholderOptions);
+}
+
+if (assignUploadPlaceholderSelect) {
+  assignUploadPlaceholderSelect.addEventListener("change", toggleQuickUploadNewPlaceholderField);
+}
+
+if (assignUploadFileInput) {
+  assignUploadFileInput.addEventListener("change", () => {
+    pendingQuickUploadFiles = [];
+    assignUploadFileCount.textContent = assignUploadFileInput.files.length
+      ? `${assignUploadFileInput.files.length} file(s) selected.`
+      : "Select a case, choose a placeholder, and upload a file.";
   });
 }
 
 if (cancelAssignUploadBtn) {
   cancelAssignUploadBtn.addEventListener("click", () => {
-    pendingQuickUploadFiles = [];
     assignUploadModal.close();
+    resetUploadModal();
   });
 }
 
 if (confirmAssignUploadBtn) {
   confirmAssignUploadBtn.addEventListener("click", uploadPendingFilesToCase);
+}
+
+if (assignUploadModal) {
+  assignUploadModal.addEventListener("close", resetUploadModal);
 }
 
 if (toggleDarkModeBtn) {

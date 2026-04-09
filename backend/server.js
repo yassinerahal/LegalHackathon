@@ -1470,7 +1470,14 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
           select: { id: true }
         },
         documents: { select: { id: true } },
-        case_placeholders: { select: { id: true } }
+        case_placeholders: {
+          select: {
+            id: true,
+            name: true,
+            status: true
+          },
+          orderBy: [{ created_at: "asc" }, { id: "asc" }]
+        }
       },
       orderBy: { created_at: "desc" }
     };
@@ -1508,6 +1515,11 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
           client_name: entry.client?.full_name || "",
           owner_username: entry.owner?.username || "",
           owner_full_name: entry.owner?.full_name || "",
+          placeholders: entry.case_placeholders.map((placeholder) => ({
+            id: placeholder.id,
+            name: placeholder.name,
+            status: placeholder.status || "Pending"
+          })),
           is_owner: access.isOwner,
           is_assigned: access.isAssigned,
           can_edit: access.canEdit
@@ -1517,6 +1529,156 @@ app.get("/api/cases", requireStaffAuth, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message || "Failed to fetch cases" });
+  }
+});
+
+app.post("/api/dashboard/upload", requireStaffAuth, upload.single("file"), async (req, res) => {
+  try {
+    const file = req.file;
+    const caseId = Number(req.body.case_id);
+    const placeholderInput = String(req.body.placeholder_id || "").trim();
+    const newPlaceholderName = String(req.body.new_placeholder_name || "").trim();
+
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    if (!Number.isInteger(caseId) || caseId <= 0) {
+      return res.status(400).json({ error: "Valid case_id is required" });
+    }
+
+    if (!placeholderInput) {
+      return res.status(400).json({ error: "placeholder_id is required" });
+    }
+
+    if (!isSupportedUploadName(file.originalname)) {
+      return res.status(400).json({ error: `Unsupported file type: ${file.originalname}` });
+    }
+
+    const caseEntry = await prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        case_assignments: {
+          select: { user_id: true }
+        }
+      }
+    });
+
+    if (!caseEntry) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const isOwner = String(caseEntry.owner_id || "") === String(req.auth.id);
+    const isAssigned = caseEntry.case_assignments.some(
+      (assignment) => String(assignment.user_id) === String(req.auth.id)
+    );
+
+    if (req.auth.role !== "admin" && !isOwner && !isAssigned) {
+      return res.status(403).json({ error: "You do not have upload access to this case" });
+    }
+
+    let placeholderId = null;
+    if (placeholderInput === "NEW") {
+      if (!newPlaceholderName) {
+        return res.status(400).json({ error: "new_placeholder_name is required when creating a new placeholder" });
+      }
+    } else {
+      placeholderId = Number(placeholderInput);
+      if (!Number.isInteger(placeholderId) || placeholderId <= 0) {
+        return res.status(400).json({ error: "placeholder_id must be a valid placeholder id or NEW" });
+      }
+    }
+
+    await ensureStorageReady();
+    const uniqueFileName = `${Date.now()}-${file.originalname}`;
+    const { encryptedBuffer, encryptionIv, encryptionTag } = encryptFileBuffer(file.buffer);
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: uniqueFileName,
+        Body: encryptedBuffer,
+        ContentType: "application/octet-stream"
+      })
+    );
+
+    const result = await prisma.$transaction(async (tx) => {
+      let resolvedPlaceholderId = placeholderId;
+
+      if (placeholderInput === "NEW") {
+        const newPlaceholder = await tx.casePlaceholder.create({
+          data: {
+            case_id: caseId,
+            name: newPlaceholderName,
+            status: "Uploaded"
+          }
+        });
+        resolvedPlaceholderId = newPlaceholder.id;
+      } else {
+        const existingPlaceholder = await tx.casePlaceholder.findFirst({
+          where: {
+            id: placeholderId,
+            case_id: caseId
+          }
+        });
+
+        if (!existingPlaceholder) {
+          throw new Error("Placeholder not found for this case");
+        }
+
+        await tx.casePlaceholder.update({
+          where: { id: placeholderId },
+          data: { status: "Uploaded" }
+        });
+      }
+
+      const document = await tx.document.create({
+        data: {
+          case_id: caseId,
+          name: file.originalname
+        }
+      });
+
+      const version = await tx.documentVersion.create({
+        data: {
+          document_id: document.id,
+          placeholder_id: resolvedPlaceholderId,
+          original_name: file.originalname,
+          s3_key: uniqueFileName,
+          mime_type: file.mimetype || "application/octet-stream",
+          encryption_iv: encryptionIv,
+          encryption_tag: encryptionTag,
+          uploaded_by: req.auth.id
+        }
+      });
+
+      const placeholder = await tx.casePlaceholder.findUnique({
+        where: { id: resolvedPlaceholderId },
+        select: { id: true, name: true, status: true }
+      });
+
+      return { version, placeholder };
+    });
+
+    res.status(201).json({
+      document: {
+        id: result.version.id,
+        case_id: caseId,
+        original_name: result.version.original_name,
+        s3_key: result.version.s3_key,
+        mime_type: result.version.mime_type,
+        encryption_iv: result.version.encryption_iv,
+        encryption_tag: result.version.encryption_tag,
+        uploaded_at: result.version.uploaded_at,
+        placeholder_id: result.placeholder?.id || null,
+        placeholder_name: result.placeholder?.name || null
+      },
+      placeholder: result.placeholder
+    });
+  } catch (error) {
+    console.error("Dashboard upload error:", error);
+    const statusCode = String(error.message || "").includes("Placeholder not found") ? 404 : 500;
+    res.status(statusCode).json({ error: error.message || "Failed to upload document from dashboard" });
   }
 });
 
