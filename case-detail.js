@@ -168,6 +168,17 @@ function canDeleteCurrentCase(session = getStoredSession(), entry = null) {
   return session.role === "admin" || Boolean(entry.is_owner);
 }
 
+// =====================================================
+// STRICT RBAC FOR ERV TRANSMISSIONS
+// =====================================================
+// Only the Case Owner or an Admin can transmit documents to court
+// Assigned Lawyers and Assistants must be strictly blocked
+function canTransmitToERV(session = getStoredSession(), entry = null) {
+  if (!session || !entry) return false;
+  // Only admin or case owner (is_owner flag from API)
+  return session.role === "admin" || Boolean(entry.is_owner);
+}
+
 function setEditModalReadOnlyState(isReadOnly) {
   editCaseName.readOnly = isReadOnly;
   editClientNames.readOnly = isReadOnly;
@@ -932,6 +943,10 @@ function renderCaseDetails(entry) {
   saveEditBtn.hidden = !canModifyMetadata;
   finishCaseBtn.hidden = !canModifyMetadata;
   deleteCaseBtn.hidden = !canDeleteCurrentCase(getStoredSession(), entry);
+  
+  // STRICT RBAC FOR ERV: Only show button to Case Owner or Admin
+  sendToCourtERVBtn.hidden = !canTransmitToERV(getStoredSession(), entry);
+  
   renderCaseAssignments(entry);
 
   commentsList.innerHTML = "";
@@ -1614,26 +1629,28 @@ async function sendDocumentsToERV() {
   }
 
   try {
-    // Generate the SOAP request
-    const soapRequest = generateERVSoapRequest();
-    
-    console.log("[ERV] Generated SOAP request:");
-    console.log(soapRequest);
-
     // Show loading state
     confirmERVBtn.disabled = true;
     confirmERVBtn.textContent = "Sending...";
 
-    console.log("[ERV] Sending request to http://localhost:3000/services/ERVNachrichtPort");
+    // Get the JWT token from session (stored by api.js)
+    const token = getSessionToken();
+    if (!token) {
+      throw new Error("Authentication token not found. Please log in again.");
+    }
+
+    console.log("[ERV] Calling secure REST endpoint: POST http://localhost:3000/api/cases/:id/erv-transmit");
     
-    // Send the request to our ERV mock endpoint on the backend server
-    const response = await fetch("http://localhost:3000/services/ERVNachrichtPort", {
+    // Call the secure REST endpoint on the backend server (NOT the static server on port 5500)
+    // Backend will handle SOAP internally, RBAC is enforced server-side
+    const response = await fetch(`http://localhost:3000/api/cases/${currentCaseId}/erv-transmit`, {
       method: "POST",
       headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        "Accept": "text/xml"
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${token}`
       },
-      body: soapRequest
+      body: JSON.stringify({})
     });
 
     console.log(`[ERV] Response status: ${response.status}`);
@@ -1642,42 +1659,56 @@ async function sendDocumentsToERV() {
       contentLength: response.headers.get('Content-Length')
     });
 
+    // Parse JSON response
+    const jsonResponse = await response.json();
+    console.log("[ERV] Response received:", jsonResponse);
+
     if (!response.ok) {
-      const responseText = await response.text();
-      console.error(`[ERV] Error response (${response.status}):`, responseText.substring(0, 500));
+      // Server returned error
+      const errorMessage = jsonResponse.error || `Transmission failed with status ${response.status}`;
+      console.error(`[ERV] Server error (${response.status}):`, errorMessage);
       
-      throw new Error(`ERV API returned status ${response.status} ${response.statusText}. 
-        
-This could mean:
-1. The backend server is not running
-2. The /services/ERVNachrichtPort route is not properly configured
-3. The XML parser middleware is not working
-
-Check the backend console logs for detailed error messages and try again.`);
+      if (response.status === 403) {
+        throw new Error("Access Denied: Only the Case Owner or an Admin can transmit documents to the court.");
+      } else if (response.status === 400) {
+        throw new Error(errorMessage);
+      } else if (response.status === 401) {
+        throw new Error("Session expired. Please log in again.");
+      } else {
+        throw new Error(errorMessage);
+      }
     }
 
-    // Get the XML response
-    const xmlResponse = await response.text();
-    console.log("[ERV] Response received:");
-    console.log(xmlResponse);
+    // Success case
+    const { nachrichtenId, newStatus, documentsCount } = jsonResponse;
 
-    // Extract the Message ID from the response
-    const nachrichtenId = extractNachrichtenIdFromResponse(xmlResponse);
-
-    if (!nachrichtenId) {
-      throw new Error("Failed to extract confirmation ID from ERV response");
-    }
+    console.log(`[ERV] Success! NachrichtenID: ${nachrichtenId}, Documents transmitted: ${documentsCount}`);
 
     // Close the confirmation modal
     ervConfirmationModal.close();
 
     // Show success message with the Reference ID
-    showDetailToast(`✓ Successfully transmitted to ERV. Reference ID: ${nachrichtenId}`, "success");
+    showDetailToast(
+      `✓ Successfully transmitted ${documentsCount} document(s) to ERV. Reference ID: ${nachrichtenId}`,
+      "success"
+    );
 
-    // Optional: Update the case status in the database
-    // You can extend this to call: PATCH /api/cases/:id { status: "Filed via ERV" }
-    // For now, just log it
-    console.log("[ERV] Documents sent to ERV with reference ID:", nachrichtenId);
+    // Update the case status badge in UI
+    if (caseStatusBadge) {
+      caseStatusBadge.textContent = newStatus || "Filed via ERV";
+    }
+
+    // Optional: Refresh the case details to show updated status
+    setTimeout(async () => {
+      try {
+        const updatedCase = await getCaseById(currentCaseId);
+        if (updatedCase) {
+          renderCaseDetails(updatedCase);
+        }
+      } catch (error) {
+        console.warn("[ERV] Could not auto-refresh case details:", error);
+      }
+    }, 1000);
 
     // Reset button state
     confirmERVBtn.disabled = false;

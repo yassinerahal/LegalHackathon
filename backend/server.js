@@ -1805,6 +1805,190 @@ app.put("/api/cases/:id", requireCaseEditAccess, async (req, res) => {
   }
 });
 
+// =========================================================
+// ERV (Elektronischer Rechtsverkehr) SECURE TRANSMISSION ENDPOINT
+// =========================================================
+// POST /api/cases/:id/erv-transmit
+// Strict RBAC: Only Case Owner or Admin can transmit documents to court
+// This is a secure proxy that:
+// 1. Verifies the user is authorized (owner or admin)
+// 2. Internally converts documents to SOAP format
+// 3. Calls the /services/ERVNachrichtPort mock endpoint
+// 4. Updates the case status to "Filed via ERV"
+// 5. Returns JSON response with NachrichtenID (not XML)
+
+app.post("/api/cases/:id/erv-transmit", requireAuth, async (req, res) => {
+  try {
+    const caseId = Number(req.params.id);
+
+    // Validate case ID
+    if (!Number.isInteger(caseId) || caseId <= 0) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    // Fetch the case with owner information
+    const caseData = await prisma.case.findUnique({
+      where: { id: caseId },
+      select: {
+        id: true,
+        owner_id: true,
+        case_number: true,
+        name: true,
+        status: true
+      }
+    });
+
+    if (!caseData) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    // =========================================================
+    // STRICT RBAC: Only Case Owner or Admin can transmit
+    // =========================================================
+    const isAdmin = req.user.role === "admin";
+    const isCaseOwner = String(req.user.id) === String(caseData.owner_id);
+
+    if (!isAdmin && !isCaseOwner) {
+      console.warn(
+        `[ERV-RBAC] Unauthorized ERV transmission attempt by user ${req.user.id} ` +
+        `(role: ${req.user.role}) on case ${caseId} (owner: ${caseData.owner_id})`
+      );
+      return res.status(403).json({
+        error: "Forbidden: Only the Case Owner or an Admin can transmit documents to ERV."
+      });
+    }
+
+    console.log(`[ERV-TRANSMIT] Authorized transmission by ${isAdmin ? "Admin" : "Case Owner"} (user: ${req.user.id}) for case ${caseId}`);
+
+    // =========================================================
+    // FETCH DOCUMENTS AND GENERATE SOAP REQUEST
+    // =========================================================
+    // Get latest documents from each placeholder
+    const documentVersions = await prisma.documentVersion.findMany({
+      where: {
+        document: {
+          case_id: caseId
+        },
+        placeholder_id: { not: null }
+      },
+      include: {
+        document: {
+          select: { id: true, name: true }
+        },
+        placeholder: {
+          select: { id: true, name: true }
+        }
+      },
+      orderBy: { uploaded_at: "desc" }
+    });
+
+    // Group by placeholder and keep only latest version
+    const latestByPlaceholder = new Map();
+    for (const doc of documentVersions) {
+      if (!latestByPlaceholder.has(doc.placeholder_id)) {
+        latestByPlaceholder.set(doc.placeholder_id, doc);
+      }
+    }
+
+    const documentsToTransmit = Array.from(latestByPlaceholder.values());
+
+    if (documentsToTransmit.length === 0) {
+      return res.status(400).json({
+        error: "No documents to transmit. Please ensure all required placeholders have documents uploaded."
+      });
+    }
+
+    // Build SOAP request (simplified internal version)
+    const messageId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+
+    const soapRequest = `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://www.signaling.at/erv">
+  <SOAP-ENV:Body>
+    <tns:SendNachricht>
+      <tns:Nachricht>
+        <tns:NachrichtentyP>Klageeinreichung</tns:NachrichtentyP>
+        <tns:Gerichtscode>Z123456789</tns:Gerichtscode>
+        <tns:AbsenderCode>TESTLAW001</tns:AbsenderCode>
+        <tns:Zeitstempel>${timestamp}</tns:Zeitstempel>
+        <tns:NachrichtenID>${messageId}</tns:NachrichtenID>
+        <tns:Betreff>${caseData.name || "Klageeinreichung"}</tns:Betreff>
+        <tns:Inhalt>
+          <tns:Hauptdokument>${documentsToTransmit[0]?.document?.name || "Hauptdokument"}</tns:Hauptdokument>
+          <tns:AnlagenCount>${documentsToTransmit.length}</tns:AnlagenCount>
+        </tns:Inhalt>
+      </tns:Nachricht>
+    </tns:SendNachricht>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`;
+
+    console.log(`[ERV-TRANSMIT] Generated SOAP request with MessageID: ${messageId}`);
+
+    // =========================================================
+    // INTERNAL CALL TO SOAP ENDPOINT
+    // =========================================================
+    // Call the internal mock ERV service via HTTP
+    const soapResponse = await fetch(`http://localhost:${PORT}/services/ERVNachrichtPort`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        "Accept": "text/xml"
+      },
+      body: soapRequest
+    });
+
+    if (!soapResponse.ok) {
+      const errorText = await soapResponse.text();
+      console.error(
+        `[ERV-TRANSMIT] SOAP endpoint returned status ${soapResponse.status}: ${errorText.substring(0, 200)}`
+      );
+      return res.status(502).json({
+        error: `ERV service returned error ${soapResponse.status}. Please try again later.`
+      });
+    }
+
+    const soapResponseText = await soapResponse.text();
+    console.log(`[ERV-TRANSMIT] SOAP response received (${soapResponseText.length} bytes)`);
+
+    // Extract NachrichtenID from SOAP response
+    const nachrichtenIdMatch = soapResponseText.match(/<tns:NachrichtenID>([^<]+)<\/tns:NachrichtenID>/);
+    const responseNachrichtenId = nachrichtenIdMatch ? nachrichtenIdMatch[1] : messageId;
+
+    // =========================================================
+    // UPDATE CASE STATUS IN DATABASE
+    // =========================================================
+    const updatedCase = await prisma.case.update({
+      where: { id: caseId },
+      data: {
+        status: "Filed via ERV"
+      }
+    });
+
+    console.log(
+      `[ERV-TRANSMIT] Case ${caseId} status updated to "Filed via ERV" with NachrichtenID: ${responseNachrichtenId}`
+    );
+
+    // =========================================================
+    // RETURN JSON RESPONSE (NOT XML)
+    // =========================================================
+    res.json({
+      success: true,
+      message: "Documents successfully transmitted to ERV.",
+      caseId: caseId,
+      nachrichtenId: responseNachrichtenId,
+      timestamp: timestamp,
+      documentsCount: documentsToTransmit.length,
+      newStatus: updatedCase.status
+    });
+
+  } catch (error) {
+    console.error("[ERV-TRANSMIT] Error:", error);
+    res.status(500).json({
+      error: error.message || "Failed to transmit documents to ERV"
+    });
+  }
+});
+
 app.delete("/api/cases/:id", requireCaseOwnerOrAdmin, async (req, res) => {
   try {
     const deleted = await prisma.case.delete({
