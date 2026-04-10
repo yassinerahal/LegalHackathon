@@ -53,6 +53,46 @@ if (FILE_ENCRYPTION_KEY.length !== 32) {
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------
+// XML TEXT PARSER FOR ERV (ELEKTRONISCHER RECHTSVERKEHR) SOAP SERVICES
+// ---------------------------------------------------------
+// Parser for XML content types - must come BEFORE route handlers
+app.use((req, res, next) => {
+  const contentType = (req.get('Content-Type') || '').toLowerCase();
+  console.log(`[PARSER] ${req.method} ${req.path} - Content-Type: "${contentType}"`);
+  
+  if (contentType.includes('xml')) {
+    console.log(`[PARSER] Parsing XML body...`);
+    let data = '';
+    req.setEncoding('utf8');
+    
+    req.on('data', chunk => {
+      console.log(`[PARSER] Received ${chunk.length} bytes`);
+      data += chunk;
+    });
+    
+    req.on('end', () => {
+      console.log(`[PARSER] XML parsing complete, body size: ${data.length} bytes`);
+      req.body = data;
+      next();
+    });
+    
+    req.on('error', (err) => {
+      console.error(`[PARSER] Error reading body:`, err);
+      res.status(400).send('Bad request');
+    });
+  } else {
+    console.log(`[PARSER] Not XML, passing to next middleware`);
+    next();
+  }
+});
+
+// ---------------------------------------------------------
+// ERV MOCK SERVICE ROUTES
+// ---------------------------------------------------------
+const ervMockRoutes = require("./routes/ervMock");
+app.use("/services", ervMockRoutes);
+
 function encryptFileBuffer(buffer) {
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-gcm", FILE_ENCRYPTION_KEY, iv);
@@ -811,6 +851,7 @@ app.get("/api/cases/:id/documents", requireStaffAuth, async (req, res) => {
         mime_type: version.mime_type,
         encryption_iv: version.encryption_iv,
         encryption_tag: version.encryption_tag,
+        placeholder_id: version.placeholder_id,
         uploaded_at: version.uploaded_at
       }))
     );
@@ -2399,6 +2440,19 @@ app.post("/api/auth/login", async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "Login failed." });
   }
+});
+
+// ---------------------------------------------------------
+// ERROR HANDLERS AND DIAGNOSTICS
+// ---------------------------------------------------------
+// Catch all 404 requests
+app.use((req, res) => {
+  console.error(`[404] ${req.method} ${req.path} - Not found`);
+  console.error(`[404] Content-Type: ${req.get('Content-Type')}`);
+  if (req.body) {
+    console.error(`[404] Body (first 200 chars): ${String(req.body).substring(0, 200)}`);
+  }
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` });
 });
 
 ensureRemoteAccessSchema()

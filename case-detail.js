@@ -51,6 +51,13 @@ const ctxDownloadBtn = document.getElementById("ctxDownloadBtn");
 const ctxCopyBtn = document.getElementById("ctxCopyBtn");
 const ctxRemoveBtn = document.getElementById("ctxRemoveBtn");
 
+// ERV (Elektronischer Rechtsverkehr) Elements
+const sendToCourtERVBtn = document.getElementById("sendToCourtERVBtn");
+const ervConfirmationModal = document.getElementById("ervConfirmationModal");
+const ervDocumentsList = document.getElementById("ervDocumentsList");
+const cancelERVBtn = document.getElementById("cancelERVBtn");
+const confirmERVBtn = document.getElementById("confirmERVBtn");
+
 let currentCaseId = null;
 let contextMenuFile = null;
 let availableAssignees = [];
@@ -1396,9 +1403,350 @@ requiredDocsList.addEventListener("change", (event) => {
 detailAddDocPlaceholderBtn.addEventListener("click", addRequiredPlaceholder);
 assignCaseUserBtn.addEventListener("click", assignSelectedUserToCase);
 
+// =========================================================
+// ERV (ELEKTRONISCHER RECHTSVERKEHR) FUNCTIONS
+// =========================================================
+
+/**
+ * Generates a mock SOAP XML request for sending documents to the ERV court system.
+ * This is a sample request that simulates a real lawsuit submission.
+ * @returns {string} SOAP-formatted XML request
+ */
+function generateERVSoapRequest() {
+  const timestamp = new Date().toISOString();
+  const messageId = "MSG-" + Date.now() + "-" + Math.random().toString(36).substring(7).toUpperCase();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://www.signaling.at/erv">
+  <SOAP-ENV:Body>
+    <tns:SendNachricht>
+      <tns:Nachricht>
+        <tns:NachrichtentyP>Klageeinreichung</tns:NachrichtentyP>
+        <tns:Gerichtscode>Z123456789</tns:Gerichtscode>
+        <tns:AbsenderCode>TESTLAW001</tns:AbsenderCode>
+        <tns:Zeitstempel>${timestamp}</tns:Zeitstempel>
+        <tns:NachrichtenID>${messageId}</tns:NachrichtenID>
+        <tns:Betreff>Klage - Entgeltliche Geschäftsbesorgung</tns:Betreff>
+        <tns:Inhalt>
+          <tns:Hauptdokument>Klageschrift.pdf</tns:Hauptdokument>
+          <tns:AnlagenCount>3</tns:AnlagenCount>
+        </tns:Inhalt>
+      </tns:Nachricht>
+    </tns:SendNachricht>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`;
+}
+
+/**
+ * Extracts the NachrichtenID (Message ID) from an ERV SOAP XML response.
+ * Uses DOMParser to safely parse and navigate the XML structure.
+ * @param {string} xmlResponse - The SOAP XML response string
+ * @returns {string|null} The extracted NachrichtenID or null if not found
+ */
+function extractNachrichtenIdFromResponse(xmlResponse) {
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlResponse, "text/xml");
+
+    // Check for parsing errors
+    if (xmlDoc.parseError && xmlDoc.parseError.errorCode !== 0) {
+      console.error("XML parsing error:", xmlDoc.parseError);
+      return null;
+    }
+
+    // Navigate XML: Look for NachrichtenID element
+    // Handles both namespace-qualified and non-qualified elements
+    const nachrichtenIdElements = xmlDoc.querySelectorAll("NachrichtenID");
+    if (nachrichtenIdElements.length > 0) {
+      return nachrichtenIdElements[0].textContent.trim();
+    }
+
+    // Fallback: try with namespace prefix
+    const namespaceElements = xmlDoc.querySelectorAll("[*|localname='NachrichtenID']");
+    if (namespaceElements.length > 0) {
+      return namespaceElements[0].textContent.trim();
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error extracting NachrichtenID from XML:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetches and processes case documents, returning only the latest version of each placeholder.
+ * This ensures we send the most recent (signed/final) version of each required document.
+ * @param {number} caseId - The case ID
+ * @returns {Promise<Array>} Array of latest documents from each placeholder
+ */
+async function getLatestPlaceholderDocuments(caseId) {
+  try {
+    if (!caseId) return [];
+
+    console.log(`[ERV] Fetching placeholders and documents for case ${caseId}`);
+
+    // Fetch both documents and placeholders for this case
+    const [documents, placeholders] = await Promise.all([
+      getCaseDocuments(caseId),
+      getCasePlaceholders(caseId)
+    ]);
+
+    console.log(`[ERV] Documents returned:`, documents);
+    console.log(`[ERV] Placeholders returned:`, placeholders);
+
+    if (!placeholders || placeholders.length === 0) {
+      console.warn("[ERV] No placeholders found for this case");
+      // No placeholders - return all documents if available
+      if (documents && documents.length > 0) {
+        console.log(`[ERV] No placeholders but found ${documents.length} documents, returning all`);
+        return documents;
+      }
+      return [];
+    }
+
+    if (!documents || documents.length === 0) {
+      console.warn("[ERV] No documents found for this case");
+      return [];
+    }
+
+    // Map documents by placeholder ID for easy lookup
+    const docsByPlaceholder = {};
+    
+    documents.forEach((doc) => {
+      const placeholderId = doc.placeholder_id;
+      
+      if (placeholderId) {
+        if (!docsByPlaceholder[placeholderId]) {
+          docsByPlaceholder[placeholderId] = [];
+        }
+        docsByPlaceholder[placeholderId].push(doc);
+        console.log(`[ERV] Document "${doc.original_name}" assigned to placeholder ${placeholderId}`);
+      } else {
+        console.warn(`[ERV] Document "${doc.original_name}" has no placeholder_id set`);
+      }
+    });
+
+    console.log(`[ERV] Documents grouped by placeholder:`, docsByPlaceholder);
+
+    // For each placeholder, get the latest document (most recently uploaded)
+    const latestDocs = [];
+    placeholders.forEach((placeholder) => {
+      const docsForPlaceholder = docsByPlaceholder[placeholder.id] || [];
+      
+      console.log(`[ERV] Placeholder "${placeholder.name}" (ID: ${placeholder.id}) has ${docsForPlaceholder.length} document(s)`);
+      
+      if (docsForPlaceholder.length > 0) {
+        // Sort by uploaded_at descending to get the latest
+        const latestDoc = docsForPlaceholder.sort((a, b) => {
+          const dateA = new Date(a.uploaded_at || 0).getTime();
+          const dateB = new Date(b.uploaded_at || 0).getTime();
+          return dateB - dateA; // Descending order
+        })[0];
+
+        console.log(`[ERV] Selected latest: "${latestDoc.original_name}" (${latestDoc.uploaded_at})`);
+
+        latestDocs.push({
+          ...latestDoc,
+          placeholder_name: placeholder.name,
+          placeholder_id: placeholder.id
+        });
+      }
+    });
+
+    console.log(`[ERV] Found ${latestDocs.length} placeholders with documents to transmit:`, latestDocs);
+    return latestDocs;
+  } catch (error) {
+    console.error("[ERV] Error fetching placeholder documents:", error);
+    throw error; // Re-throw so caller can handle it
+  }
+}
+
+/**
+ * Opens the ERV confirmation modal with a list of documents ready to be transmitted.
+ * @param {Array} documentsList - Array of document objects with name and id properties
+ */
+function openERVConfirmationModal(documentsList) {
+  if (!ervConfirmationModal) return;
+
+  // Populate the documents list in the modal
+  ervDocumentsList.innerHTML = "";
+  if (documentsList && documentsList.length > 0) {
+    documentsList.forEach((doc) => {
+      const listItem = document.createElement("li");
+      listItem.className = "flex items-start justify-between rounded-xl border border-slate-200 bg-white p-3";
+      
+      // Build display info with placeholder name if available
+      const placeholderInfo = doc.placeholder_name ? ` (${doc.placeholder_name})` : "";
+      const docName = doc.original_name || doc.name || "Document";
+      
+      listItem.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="mt-0.5 text-lg text-slate-400">📄</span>
+          <div class="min-w-0 flex-1">
+            <p class="font-medium text-slate-800">${docName}</p>
+            <p class="text-xs text-slate-500">Category: ${placeholderInfo || "General"} • Uploaded: ${doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString("de-AT") : "Unknown date"}</p>
+          </div>
+        </div>
+        <span class="text-xs font-semibold text-green-600">✓ Latest</span>
+      `;
+      ervDocumentsList.appendChild(listItem);
+    });
+  } else {
+    const emptyMessage = document.createElement("li");
+    emptyMessage.className = "rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800";
+    emptyMessage.textContent = "No documents available to transmit. Please upload documents first.";
+    ervDocumentsList.appendChild(emptyMessage);
+  }
+
+  // Open the modal
+  ervConfirmationModal.showModal();
+}
+
+/**
+ * Sends documents to the ERV court system via a mock SOAP request.
+ * Fetches the XML response, extracts the Message ID, and updates the case status.
+ */
+async function sendDocumentsToERV() {
+  if (!currentCaseId) {
+    showDetailToast("Error: No case selected", "error");
+    return;
+  }
+
+  try {
+    // Generate the SOAP request
+    const soapRequest = generateERVSoapRequest();
+    
+    console.log("[ERV] Generated SOAP request:");
+    console.log(soapRequest);
+
+    // Show loading state
+    confirmERVBtn.disabled = true;
+    confirmERVBtn.textContent = "Sending...";
+
+    console.log("[ERV] Sending request to http://localhost:3000/services/ERVNachrichtPort");
+    
+    // Send the request to our ERV mock endpoint on the backend server
+    const response = await fetch("http://localhost:3000/services/ERVNachrichtPort", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        "Accept": "text/xml"
+      },
+      body: soapRequest
+    });
+
+    console.log(`[ERV] Response status: ${response.status}`);
+    console.log(`[ERV] Response headers:`, {
+      contentType: response.headers.get('Content-Type'),
+      contentLength: response.headers.get('Content-Length')
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      console.error(`[ERV] Error response (${response.status}):`, responseText.substring(0, 500));
+      
+      throw new Error(`ERV API returned status ${response.status} ${response.statusText}. 
+        
+This could mean:
+1. The backend server is not running
+2. The /services/ERVNachrichtPort route is not properly configured
+3. The XML parser middleware is not working
+
+Check the backend console logs for detailed error messages and try again.`);
+    }
+
+    // Get the XML response
+    const xmlResponse = await response.text();
+    console.log("[ERV] Response received:");
+    console.log(xmlResponse);
+
+    // Extract the Message ID from the response
+    const nachrichtenId = extractNachrichtenIdFromResponse(xmlResponse);
+
+    if (!nachrichtenId) {
+      throw new Error("Failed to extract confirmation ID from ERV response");
+    }
+
+    // Close the confirmation modal
+    ervConfirmationModal.close();
+
+    // Show success message with the Reference ID
+    showDetailToast(`✓ Successfully transmitted to ERV. Reference ID: ${nachrichtenId}`, "success");
+
+    // Optional: Update the case status in the database
+    // You can extend this to call: PATCH /api/cases/:id { status: "Filed via ERV" }
+    // For now, just log it
+    console.log("[ERV] Documents sent to ERV with reference ID:", nachrichtenId);
+
+    // Reset button state
+    confirmERVBtn.disabled = false;
+    confirmERVBtn.textContent = "Send to Court";
+  } catch (error) {
+    console.error("[ERV] ERV transmission error:", error);
+    showDetailToast(`Error: ${error.message || "Failed to send to ERV"}`, "error");
+    confirmERVBtn.disabled = false;
+    confirmERVBtn.textContent = "Send to Court";
+  }
+}
+
+
+
 cancelEditBtn.addEventListener("click", () => {
   editCaseModal.close();
 });
+
+// ERV Modal Event Listeners
+if (sendToCourtERVBtn) {
+  sendToCourtERVBtn.addEventListener("click", async () => {
+    if (!currentCaseId) {
+      showDetailToast("Error: No case selected", "error");
+      return;
+    }
+
+    try {
+      // Disable button during loading
+      sendToCourtERVBtn.disabled = true;
+      sendToCourtERVBtn.textContent = "Loading...";
+      
+      console.log("[ERV] Fetching documents for case:", currentCaseId);
+      
+      // Fetch latest documents from each placeholder
+      const documents = await getLatestPlaceholderDocuments(currentCaseId);
+      
+      console.log("[ERV] Documents retrieved:", documents);
+      
+      if (!documents || documents.length === 0) {
+        const errorMsg = "No documents to transmit. Please:\n1. Create placeholders in this case\n2. Upload documents to those placeholders\n3. Try again";
+        console.warn("[ERV]", errorMsg);
+        showDetailToast(errorMsg, "error");
+        sendToCourtERVBtn.disabled = false;
+        sendToCourtERVBtn.textContent = "📋 Send to Court via ERV";
+        return;
+      }
+
+      // Open confirmation modal with document list
+      openERVConfirmationModal(documents);
+      sendToCourtERVBtn.disabled = false;
+      sendToCourtERVBtn.textContent = "📋 Send to Court via ERV";
+    } catch (error) {
+      console.error("[ERV] Error fetching documents:", error);
+      showDetailToast(`Error: ${error.message || "Failed to load documents"}`, "error");
+      sendToCourtERVBtn.disabled = false;
+      sendToCourtERVBtn.textContent = "📋 Send to Court via ERV";
+    }
+  });
+}
+
+if (confirmERVBtn) {
+  confirmERVBtn.addEventListener("click", sendDocumentsToERV);
+}
+
+if (cancelERVBtn) {
+  cancelERVBtn.addEventListener("click", () => {
+    ervConfirmationModal.close();
+  });
+}
 
 if (closePlaceholderHistoryBtn) {
   closePlaceholderHistoryBtn.addEventListener("click", () => {
