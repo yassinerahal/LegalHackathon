@@ -66,6 +66,16 @@ let selectedEditAssigneeIds = new Set();
 let detailToastTimeouts = new WeakMap();
 let activeHistoryPlaceholderId = null;
 
+// =====================================================
+// SVG ICON HELPER - Download Icon
+// =====================================================
+// Returns inline SVG download icon (Heroicons Outline style)
+function getDownloadIconSVG() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+  </svg>`;
+}
+
 function requireSession() {
   return requireStaffSession();
 }
@@ -526,7 +536,7 @@ function renderPlaceholderHistoryTimeline(versions) {
           <h4 class="mt-2 break-words text-lg font-semibold text-slate-800">${version.original_name || "Unnamed file"}</h4>
           <p class="mt-2 text-sm text-slate-500">${formatHistoryDateTime(version.uploaded_at)}</p>
         </div>
-        <button type="button" class="history-download-btn rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50" data-history-s3-key="${version.s3_key || ""}" data-history-file-name="${version.original_name || "file"}">Download</button>
+        <button type="button" title="Download File" class="history-download-btn text-slate-500 hover:text-indigo-600 transition-colors p-2 rounded-full hover:bg-indigo-50" data-history-s3-key="${version.s3_key || ""}" data-history-file-name="${version.original_name || "file"}">${getDownloadIconSVG()}</button>
       </div>
     `;
 
@@ -790,11 +800,12 @@ function renderCaseDetails(entry) {
 
       const downloadBtn = document.createElement("button");
       downloadBtn.type = "button";
+      downloadBtn.title = "Download File";
       downloadBtn.className =
-        "doc-download-link rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50";
+        "doc-download-link text-slate-500 hover:text-indigo-600 transition-colors p-2 rounded-full hover:bg-indigo-50";
       downloadBtn.dataset.s3Key = file.s3Key || "";
       downloadBtn.dataset.fileName = file.name || "file";
-      downloadBtn.textContent = "Download";
+      downloadBtn.innerHTML = getDownloadIconSVG();
 
       card.appendChild(thumb);
       card.appendChild(name);
@@ -862,9 +873,10 @@ function renderCaseDetails(entry) {
 
           const downloadLink = document.createElement("a");
           downloadLink.className =
-            "btn-ghost btn-small doc-download-link rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+            "doc-download-link text-slate-500 hover:text-indigo-600 transition-colors p-2 rounded-full hover:bg-indigo-50";
+          downloadLink.title = "Download File";
           downloadLink.href = getDocumentDownloadUrl(attachedFile);
-          downloadLink.textContent = "Download";
+          downloadLink.innerHTML = getDownloadIconSVG();
           downloadLink.dataset.s3Key = attachedFile.s3_key || "";
           downloadLink.dataset.fileName = attachedFile.original_name || "file";
 
