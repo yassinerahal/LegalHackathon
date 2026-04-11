@@ -21,16 +21,19 @@
   </head>
   <body class="min-h-screen bg-slate-100 text-slate-800">
     <div class="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(226,232,240,0.82)_42%,_rgba(219,228,241,0.92)_100%)]">
-      <header class="border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <div class="mx-auto flex max-w-[1900px] items-center justify-between gap-6 px-6 py-4">
-          <a href="index.html" class="flex min-w-0 items-center gap-4" aria-label="Go to dashboard">
-            <img src="icons/logo.png" alt="NEXTACT logo" class="h-16 w-auto shrink-0 object-contain" />
-            <div class="min-w-0">
-              <h1 class="font-serif text-2xl font-semibold tracking-[0.16em] text-slate-800">NEXTACT</h1>
-              <p class="text-[11px] uppercase tracking-[0.2em] text-amber-700">Legal operations dashboard</p>
+      <!-- RESPONSIVE HEADER -->
+      <header class="border-b border-slate-200/80 bg-white/90 backdrop-blur sticky top-0 z-40">
+        <div class="mx-auto flex max-w-[1900px] items-center justify-between gap-4 px-4 py-3 md:gap-6 md:px-6 md:py-4">
+          <!-- Logo and Brand -->
+          <a href="index.html" class="flex min-w-0 items-center gap-2 md:gap-4" aria-label="Go to dashboard">
+            <img src="icons/logo.png" alt="NEXTACT logo" class="h-12 w-auto shrink-0 object-contain md:h-16" />
+            <div class="min-w-0 hidden sm:block">
+              <h1 class="font-serif text-lg md:text-2xl font-semibold tracking-[0.16em] text-slate-800">NEXTACT</h1>
+              <p class="text-[10px] md:text-[11px] uppercase tracking-[0.2em] text-amber-700">Legal operations dashboard</p>
             </div>
           </a>
 
+          <!-- Desktop Navigation (md and up) -->
           <nav class="hidden items-center gap-2 rounded-2xl bg-slate-100/90 px-4 py-2 md:flex">
             <a href="index.html" class="rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-600 shadow-sm">Dashboard</a>
             <a href="cases.html" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Cases</a>
@@ -38,15 +41,66 @@
             <a id="nav-users-link" href="users.html" class="hidden rounded-xl px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700">Users</a>
           </nav>
 
-          <div class="flex items-center gap-3">
+          <!-- Right Controls - Desktop (md and up) -->
+          <div class="hidden md:flex items-center gap-3">
             <div class="gtranslate_wrapper"></div>
-            <div class="hidden text-right md:block">
+            <div class="text-right">
               <span id="loggedInUserName" class="block text-sm font-semibold text-slate-700"></span>
               <span id="nav-user-role" class="text-[11px] uppercase tracking-[0.2em] text-slate-400"></span>
             </div>
             <button id="toggleDarkModeBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
             <button id="billingBtn" type="button" class="icon-btn billing-icon-btn" title="Go to billing page" aria-label="Go to billing page"><span class="billing-symbol" aria-hidden="true">$</span></button>
             <button id="logoutBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50" title="Log out" aria-label="Log out">Logout</button>
+          </div>
+
+          <!-- Mobile Controls (below md) -->
+          <div class="flex items-center gap-2 md:hidden">
+            <button id="toggleDarkModeBtn" type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+            <!-- Hamburger Button -->
+            <button id="hamburger-btn" type="button" class="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50" title="Toggle menu" aria-label="Toggle navigation menu" aria-expanded="false">
+              <!-- Open Icon (3 lines) -->
+              <svg id="hamburger-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6">
+                <line x1="4" y1="6" x2="20" y2="6"></line>
+                <line x1="4" y1="12" x2="20" y2="12"></line>
+                <line x1="4" y1="18" x2="20" y2="18"></line>
+              </svg>
+              <!-- Close Icon (X) - Hidden by default -->
+              <svg id="hamburger-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden h-6 w-6">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mobile Menu Drawer (Hidden by default, md and up: hidden) -->
+        <div id="mobile-menu" class="hidden border-t border-slate-200 bg-white flex-col space-y-3 px-4 py-4 md:hidden">
+          <!-- Mobile Navigation Links -->
+          <nav class="flex flex-col space-y-1">
+            <a href="index.html" class="rounded-lg px-4 py-3 text-base font-medium text-indigo-600 bg-indigo-50">Dashboard</a>
+            <a href="cases.html" class="rounded-lg px-4 py-3 text-base font-medium text-slate-700 hover:bg-slate-50">Cases</a>
+            <a href="clients.html" class="rounded-lg px-4 py-3 text-base font-medium text-slate-700 hover:bg-slate-50">Clients</a>
+            <a id="nav-users-link-mobile" href="users.html" class="hidden rounded-lg px-4 py-3 text-base font-medium text-slate-700 hover:bg-slate-50">Users</a>
+          </nav>
+          
+          <!-- Mobile User Info -->
+          <div class="border-t border-slate-200 pt-3">
+            <div class="px-4 py-2">
+              <p id="mobileLoggedInUserName" class="text-sm font-semibold text-slate-700"></p>
+              <p id="mobileNavUserRole" class="text-xs uppercase tracking-[0.1em] text-slate-400"></p>
+            </div>
+          </div>
+
+          <!-- GTranslate in Mobile Menu -->
+          <div class="border-t border-slate-200 pt-3">
+            <p class="px-4 text-xs font-semibold uppercase tracking-widest text-slate-500">Language</p>
+            <div class="gtranslate_wrapper px-4 py-2"></div>
+          </div>
+
+          <!-- Mobile Action Buttons -->
+          <div class="border-t border-slate-200 pt-3 space-y-2">
+            <button id="billingBtnMobile" type="button" class="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50" title="Go to billing page" aria-label="Go to billing page">$ Billing</button>
+            <button id="logoutBtnMobile" type="button" class="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50" title="Log out" aria-label="Log out">Logout</button>
           </div>
         </div>
       </header>
@@ -285,7 +339,10 @@
       </form>
     </dialog>
 
+    <script src="config.js"></script>
     <script src="api.js"></script>
+    <script src="mobile-nav.js"></script>
+    <script src="nav-sync.js"></script>
     <script src="app.js"></script>
     <script>
       window.gtranslateSettings = {
