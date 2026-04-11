@@ -1,4 +1,14 @@
-const API_BASE_URL = "http://localhost:3000/api";
+// =========================================================
+// DYNAMIC API CONFIGURATION
+// =========================================================
+// Load environment configuration (defined in config.js)
+// For Vercel deployment, set environment variables there:
+// - VITE_API_URL (if using Vite bundler)
+// - or inject window.__APP_CONFIG__.API_BASE_URL via Vercel Functions
+//
+// For local development, use .env.local with VITE_API_URL=http://localhost:3000/api
+// Or use localStorage: localStorage.setItem('app_api_base_url', 'http://localhost:3000/api')
+
 const STORED_SESSION_KEY = "nextact_current_user";
 const STORED_JWT_KEY = "nextact_jwt";
 const SUPPORTED_UPLOAD_EXTENSIONS = [
@@ -16,7 +26,18 @@ const SUPPORTED_UPLOAD_EXTENSIONS = [
 const SUPPORTED_UPLOAD_ACCEPT = SUPPORTED_UPLOAD_EXTENSIONS.join(",");
 
 function getApiUrl(path) {
-  return `${API_BASE_URL}${path}`;
+  // Use the dynamic Config module to build API URL
+  // This handles localhost in dev, production domain in Vercel, etc.
+  if (typeof Config !== 'undefined' && Config.getApiUrl) {
+    return Config.getApiUrl(path);
+  }
+
+  // Fallback if Config not loaded (should not happen in normal operation)
+  const baseUrl = typeof window !== 'undefined' && window.__APP_CONFIG__?.API_BASE_URL
+    ? window.__APP_CONFIG__.API_BASE_URL
+    : 'http://localhost:3000/api';
+
+  return `${baseUrl}${path}`;
 }
 
 function isSupportedUploadFile(file) {

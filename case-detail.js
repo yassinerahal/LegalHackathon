@@ -1651,11 +1651,15 @@ async function sendDocumentsToERV() {
       throw new Error("Authentication token not found. Please log in again.");
     }
 
-    console.log("[ERV] Calling secure REST endpoint: POST http://localhost:3000/api/cases/:id/erv-transmit");
+    console.log("[ERV] Calling secure REST endpoint: POST /api/cases/:id/erv-transmit");
     
-    // Call the secure REST endpoint on the backend server (NOT the static server on port 5500)
-    // Backend will handle SOAP internally, RBAC is enforced server-side
-    const response = await fetch(`http://localhost:3000/api/cases/${currentCaseId}/erv-transmit`, {
+    // Use the dynamic API URL configuration (defined in config.js)
+    // This automatically handles localhost in dev, production domain in Vercel, etc.
+    const apiBaseUrl = typeof Config !== 'undefined' && Config.getApiBaseUrl
+      ? Config.getApiBaseUrl()
+      : 'http://localhost:3000/api';
+
+    const response = await fetch(`${apiBaseUrl}/cases/${currentCaseId}/erv-transmit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
