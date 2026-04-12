@@ -167,6 +167,18 @@ function renderUsers() {
 
   filteredUsers.forEach((user) => {
     const isPending = !user.is_approved || user.role === "pending";
+    
+    // Get current logged-in user ID for self-role modification lockout
+    let currentUserId = null;
+    try {
+      const session = JSON.parse(localStorage.getItem(SESSION_KEY) || "{}");
+      currentUserId = session.id;
+    } catch (error) {
+      // Silently fail - currentUserId stays null
+    }
+    
+    const isSelf = currentUserId && String(currentUserId) === String(user.id);
+    
     const li = document.createElement("li");
     li.dataset.userId = user.id;
     li.className =
@@ -193,10 +205,19 @@ function renderUsers() {
           </label>
           <select
             data-user-role
-            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 ${
+              isSelf ? "cursor-not-allowed opacity-75 bg-gray-100" : ""
+            }"
+            ${isSelf ? "disabled" : ""}
+            title="${isSelf ? "Self-role modification is disabled for security." : ""}"
           >
             ${getRoleOptions(user.role || "pending")}
           </select>
+          ${
+            isSelf
+              ? '<p class="mt-2 text-xs text-amber-600 font-medium">Self-role modification is disabled for security.</p>'
+              : ""
+          }
         </div>
         <div class="flex flex-wrap justify-start gap-3 lg:justify-end">
           <button

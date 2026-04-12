@@ -257,6 +257,17 @@ async function seedDemoData() {
     client_id: null
   });
 
+  // Create a second admin account (Four-Eyes Principle: ensures at least two admins exist)
+  const secondAdminUser = await upsertUser({
+    username: "admin.backup",
+    full_name: "Backup Administrator",
+    email: "admin.backup@nextact.local",
+    password_hash: passwordHash,
+    role: "admin",
+    is_approved: true,
+    client_id: null
+  });
+
   await upsertUser({
     username: "portal.acme",
     full_name: "Portal Acme",

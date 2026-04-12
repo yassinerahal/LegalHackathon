@@ -2500,13 +2500,30 @@ app.put("/api/admin/settings/case-pattern", requireRole(["admin"]), async (req, 
 
 async function updateUserRole(req, res) {
   try {
+    const targetUserId = Number(req.params.id);
+    const authUserId = Number(req.auth.id);
     const nextRole = normalizeUserRole(String(req.body.role || "").trim().toLowerCase());
+    
     if (!["admin", "lawyer", "assistant", "client"].includes(nextRole)) {
       return res.status(400).json({ error: "role must be admin, lawyer, assistant, or client" });
     }
 
+    // Prevent admins from changing their own role (security guardrail)
+    if (targetUserId === authUserId && req.auth.role === "admin") {
+      // Fetch the current role to check if it would change
+      const currentUser = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { role: true }
+      });
+      
+      if (currentUser && currentUser.role !== nextRole) {
+        console.log(`[SECURITY] Admin ${authUserId} attempted to change their own role from ${currentUser.role} to ${nextRole}`);
+        return res.status(403).json({ error: "You cannot change your own administrative role. Please contact another administrator if a change is required." });
+      }
+    }
+
     const user = await prisma.user.update({
-      where: { id: Number(req.params.id) },
+      where: { id: targetUserId },
       data: {
         role: nextRole,
         is_approved: true
