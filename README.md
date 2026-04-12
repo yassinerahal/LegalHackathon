@@ -11,6 +11,24 @@
 
 ---
 
+## ⚠️ Sicherheits-Disclaimer & Demo-Hinweis
+**Bitte vor dem Fortfahren lesen.**
+
+Um sicherzustellen, dass Juroren und Prüfer die NextAct-Demo sofort und ohne komplexe Umgebungskonfiguration ausführen können, haben wir bewusst sensible Konfigurationsdateien und Zugangsdaten in dieses öffentliche Repository aufgenommen.
+
+**Wichtiger Hinweis:** Das Hochladen von "Secrets" in ein Versionskontrollsystem ist eine reine "Hackathon-Maßnahme", um eine nahtlose "Plug-and-Play"-Erfahrung zu ermöglichen.
+
+Sicherheitsprotokoll nach der Demo:
+Sobald der Bewertungszeitraum des Hackathons endet, werden die folgenden Maßnahmen ergriffen:
+
+- Repository-Bereinigung: Alle sensiblen Konfigurationsdateien und .env-Dateien werden dauerhaft aus dem Repository-Verlauf entfernt.
+
+- Rotation von Zugangsdaten: Alle in dieser Demo verwendeten Passwörter, Secrets und API-Keys werden widerrufen und geändert.
+
+- Produktions-Härtung: Das Projekt wird auf eine sichere, auf Umgebungsvariablen basierende Konfiguration (Environment Variables) umgestellt.
+
+**Warnung:** Verwenden Sie keine der in diesem Repository gefundenen Zugangsdaten für andere Zwecke als die Ausführung dieser spezifischen Demo. Diese Daten sind aus Gründen der Zugänglichkeit absichtlich "kompromittiert".
+
 ## 🎯 Das Projekt
 
 **NextAct** ist eine spezialisierte Case-Management- und Dokumentenverwaltungsplattform für österreichische Rechtsanwälte. Das System integriert nahtlos mit dem ERV (Elektronischer Rechtsverkehr) zur sicheren Kommunikation mit Gerichten und bietet umfassende rollenbasierte Zugriffskontrolle (RBAC) mit drei Benutzertypen: Administrator, Anwalt und Kanzleiangestellte.
