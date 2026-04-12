@@ -15,7 +15,12 @@ const requiredDocsList = document.getElementById("requiredDocsList");
 const detailDocPlaceholderName = document.getElementById("detailDocPlaceholderName");
 const detailDocPlaceholderStatus = document.getElementById("detailDocPlaceholderStatus");
 const detailAddDocPlaceholderBtn = document.getElementById("detailAddDocPlaceholderBtn");
-const commentsList = document.getElementById("commentsList");
+const chatMessages = document.getElementById("chatMessages");
+const chatMessagesContainer = document.getElementById("chatMessagesContainer");
+const chatMessageInput = document.getElementById("chatMessageInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const chatInputSection = document.getElementById("chatInputSection");
+const chatNoPermissionMessage = document.getElementById("chatNoPermissionMessage");
 const caseAssignmentsPanel = document.getElementById("caseAssignmentsPanel");
 const caseAssigneeSelect = document.getElementById("caseAssigneeSelect");
 const assignCaseUserBtn = document.getElementById("assignCaseUserBtn");
@@ -59,6 +64,7 @@ const cancelERVBtn = document.getElementById("cancelERVBtn");
 const confirmERVBtn = document.getElementById("confirmERVBtn");
 
 let currentCaseId = null;
+let currentCaseCanEdit = false;
 let contextMenuFile = null;
 let availableAssignees = [];
 let assignedUsers = [];
@@ -743,6 +749,7 @@ async function saveUploadedFilesToCase(files) {
 
 function renderCaseDetails(entry) {
   currentCaseId = entry.id;
+  currentCaseCanEdit = Boolean(entry.can_edit);
   const canEditCurrentCase = canEditCase(getStoredSession(), entry);
   const canModifyMetadata = canModifyCaseMetadata(getStoredSession(), entry);
   caseTitle.textContent = entry.title || "Case";
@@ -960,29 +967,6 @@ function renderCaseDetails(entry) {
   sendToCourtERVBtn.hidden = !canTransmitToERV(getStoredSession(), entry);
   
   renderCaseAssignments(entry);
-
-  commentsList.innerHTML = "";
-  const comments = entry.comments || [];
-  if (!comments.length) {
-    commentsList.innerHTML = `
-      <li>
-        <div>
-          <strong>No comments yet.</strong>
-        </div>
-      </li>
-    `;
-  } else {
-    comments.forEach((comment) => {
-      const li = document.createElement("li");
-      li.innerHTML = `
-        <div>
-          <strong>${comment.createdAtLabel || "Update"}</strong>
-          <p class="meta">${comment.text}</p>
-        </div>
-      `;
-      commentsList.appendChild(li);
-    });
-  }
 }
 
 async function addRequiredPlaceholder() {
@@ -1920,6 +1904,197 @@ finishCaseBtn.addEventListener("click", () => {
   editCaseStatus.value = "Finished";
   saveEditBtn.click();
 });
+
+// =====================================================
+// CHAT COLLABORATION FUNCTIONS
+// =====================================================
+
+/**
+ * Format timestamp to readable format (e.g., "Today, 14:30" or "Yesterday, 09:15")
+ */
+function formatCommentTimestamp(isoString) {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const commentDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    let dateLabel = "";
+    if (commentDate.getTime() === today.getTime()) {
+      dateLabel = "Today";
+    } else if (commentDate.getTime() === yesterday.getTime()) {
+      dateLabel = "Yesterday";
+    } else {
+      dateLabel = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+
+    const timeLabel = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return `${dateLabel}, ${timeLabel}`;
+  } catch (error) {
+    return "Unknown time";
+  }
+}
+
+/**
+ * Render a single comment message in the chat
+ */
+function renderChatMessage(comment, isOwnMessage) {
+  const messageEl = document.createElement("div");
+  messageEl.className = `flex ${isOwnMessage ? "justify-end" : "justify-start"}`;
+
+  const messageBubble = document.createElement("div");
+  messageBubble.className = `max-w-xs rounded-[16px] p-3 ${
+    isOwnMessage
+      ? "bg-indigo-600 text-white rounded-br-none"
+      : "bg-slate-200 text-slate-800 rounded-bl-none"
+  }`;
+
+  // Author info + timestamp (above message)
+  const infoEl = document.createElement("div");
+  infoEl.className = `text-xs font-medium mb-1 ${isOwnMessage ? "text-indigo-100" : "text-slate-600"}`;
+  infoEl.textContent = `${comment.user.full_name || comment.user.username} • ${comment.user.role}`;
+
+  // Message content (XSS protection - use textContent)
+  const contentEl = document.createElement("div");
+  contentEl.className = "text-sm break-words";
+  contentEl.textContent = comment.content;
+
+  // Timestamp (below message)
+  const timeEl = document.createElement("div");
+  timeEl.className = `text-xs mt-1 ${isOwnMessage ? "text-indigo-100" : "text-slate-500"}`;
+  timeEl.textContent = formatCommentTimestamp(comment.created_at);
+
+  messageBubble.appendChild(infoEl);
+  messageBubble.appendChild(contentEl);
+  messageBubble.appendChild(timeEl);
+  messageEl.appendChild(messageBubble);
+
+  return messageEl;
+}
+
+/**
+ * Load all comments for the current case
+ */
+async function loadCaseComments() {
+  try {
+    if (!currentCaseId) return;
+
+    const response = await fetch(`http://localhost:3000/api/cases/${currentCaseId}/comments`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getSessionToken()}`
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        // User doesn't have permission to view comments
+        showChatNoPermission();
+        return;
+      }
+      throw new Error(`Failed to load comments: ${response.statusText}`);
+    }
+
+    const comments = await response.json();
+    const currentUser = getStoredSession();
+
+    // Clear previous messages
+    chatMessages.innerHTML = "";
+
+    // Render all comments (oldest first)
+    comments.forEach((comment) => {
+      const isOwn = comment.user_id === currentUser.id;
+      const messageEl = renderChatMessage(comment, isOwn);
+      chatMessages.appendChild(messageEl);
+    });
+
+    // Auto-scroll to bottom after loading
+    scrollChatToBottom();
+  } catch (error) {
+    console.error("Load comments error:", error);
+    showDetailToast("Failed to load comments", "error");
+  }
+}
+
+/**
+ * Send a new comment message
+ */
+async function sendChatMessage(content) {
+  const trimmedContent = (content || "").trim();
+  if (!trimmedContent) {
+    showDetailToast("Message cannot be empty", "warning");
+    return;
+  }
+
+  try {
+    const response = await fetch(`http://localhost:3000/api/cases/${currentCaseId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getSessionToken()}`
+      },
+      body: JSON.stringify({ content: trimmedContent })
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        showDetailToast("You do not have permission to comment on this case", "error");
+        return;
+      }
+      const error = await response.json();
+      throw new Error(error.error || "Failed to send message");
+    }
+
+    const comment = await response.json();
+    const currentUser = getStoredSession();
+    const isOwn = comment.user_id === currentUser.id;
+    const messageEl = renderChatMessage(comment, isOwn);
+    chatMessages.appendChild(messageEl);
+
+    // Clear input field
+    chatMessageInput.value = "";
+
+    // Auto-scroll to bottom
+    scrollChatToBottom();
+    showDetailToast("Message sent", "success");
+  } catch (error) {
+    console.error("Send message error:", error);
+    showDetailToast(error.message || "Failed to send message", "error");
+  }
+}
+
+/**
+ * Auto-scroll chat to the bottom
+ */
+function scrollChatToBottom() {
+  if (chatMessagesContainer) {
+    chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+  }
+}
+
+/**
+ * Check write permission and show/hide input section accordingly
+ */
+function checkChatPermission() {
+  if (currentCaseCanEdit) {
+    chatInputSection.classList.remove("hidden");
+    chatNoPermissionMessage.classList.add("hidden");
+  } else {
+    showChatNoPermission();
+  }
+}
+
+/**
+ * Show "no permission" message and hide input
+ */
+function showChatNoPermission() {
+  chatInputSection.classList.add("hidden");
+  chatNoPermissionMessage.classList.remove("hidden");
+}
+
 async function initPage() {
   const caseId = getCaseIdFromQuery();
   if (!caseId) {
@@ -1984,6 +2159,10 @@ async function initPage() {
     });
 
     renderCaseDetails(mergedCase);
+
+    // Initialize chat after case details are loaded
+    checkChatPermission();
+    await loadCaseComments();
   } catch (error) {
     console.error("Failed to load case detail:", error);
     if (String(error.message || "").toLowerCase().includes("not found")) {
@@ -1994,6 +2173,26 @@ async function initPage() {
     window.alert(error.message || "Failed to load this case.");
   }
 }
+
+// =====================================================
+// CHAT EVENT LISTENERS
+// =====================================================
+
+// Send message on button click
+chatSendBtn.addEventListener("click", () => {
+  const content = chatMessageInput.value;
+  sendChatMessage(content);
+});
+
+// Send message on Enter key press (Shift+Enter for new line)
+chatMessageInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    const content = chatMessageInput.value;
+    sendChatMessage(content);
+  }
+});
+
 requireSession();
 applyTheme(readTheme());
 renderLoggedInUser();

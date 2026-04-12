@@ -21,6 +21,7 @@ model User {
   owned_cases       Case[]
   case_assignments  CaseAssignment[]
   uploaded_versions DocumentVersion[]   @relation("UploadedByUser")
+  comments          Comment[]
 
   @@map("users")
 }
@@ -70,6 +71,7 @@ model Case {
   case_assignments   CaseAssignment[]
   documents          Document[]
   case_placeholders  CasePlaceholder[]
+  comments           Comment[]
 
   @@map("cases")
 }
@@ -135,4 +137,16 @@ model CasePlaceholder {
   versions   DocumentVersion[]
 
   @@map("case_placeholders")
+}
+
+model Comment {
+  id         Int      @id @default(autoincrement())
+  case_id    Int
+  user_id    Int
+  content    String   @db.Text
+  created_at DateTime @default(now())
+  case       Case     @relation(fields: [case_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id])
+
+  @@map("comments")
 }

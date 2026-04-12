@@ -349,6 +349,87 @@ async function seedDemoData() {
     sequence = await upsertDemoCase(item, pattern, sequence);
   }
 
+  // Seed example comments for the first case
+  const firstCase = await prisma.case.findFirst({
+    where: { name: "Prüfung Gewerbemietvertrag" }
+  });
+
+  if (firstCase) {
+    // Clear existing comments
+    await prisma.comment.deleteMany({
+      where: { case_id: firstCase.id }
+    });
+
+    // Create example comments
+    await prisma.comment.create({
+      data: {
+        case_id: firstCase.id,
+        user_id: annaLawyer.id,
+        content: "I have reviewed the lease agreement. There are some concerning provisions regarding early termination rights that we should discuss."
+      }
+    });
+
+    await prisma.comment.create({
+      data: {
+        case_id: firstCase.id,
+        user_id: lisaAssistant.id,
+        content: "Thank you for reviewing. I have prepared a summary of the key terms and potential risks. Please see the attached document."
+      }
+    });
+
+    await prisma.comment.create({
+      data: {
+        case_id: firstCase.id,
+        user_id: annaLawyer.id,
+        content: "Good work, Lisa. Let's schedule a call with the client next week to discuss the modifications we recommend."
+      }
+    });
+
+    await prisma.comment.create({
+      data: {
+        case_id: firstCase.id,
+        user_id: lisaAssistant.id,
+        content: "I'll coordinate with the client and set up the meeting for Tuesday at 3 PM. Is that convenient?"
+      }
+    });
+  }
+
+  const secondCase = await prisma.case.findFirst({
+    where: { name: "Markenanmeldung Nordlicht" }
+  });
+
+  if (secondCase) {
+    // Clear existing comments
+    await prisma.comment.deleteMany({
+      where: { case_id: secondCase.id }
+    });
+
+    // Create example comments for second case
+    await prisma.comment.create({
+      data: {
+        case_id: secondCase.id,
+        user_id: marcLawyer.id,
+        content: "Collision search results are back. We need to review the similar marks in classes 35 and 41."
+      }
+    });
+
+    await prisma.comment.create({
+      data: {
+        case_id: secondCase.id,
+        user_id: tobiasAssistant.id,
+        content: "I've compiled the collision analysis. Most conflicts are with descriptive marks which are likely weak. Our application has a strong position."
+      }
+    });
+
+    await prisma.comment.create({
+      data: {
+        case_id: secondCase.id,
+        user_id: marcLawyer.id,
+        content: "Excellent analysis. Let's proceed with the application filing next Monday."
+      }
+    });
+  }
+
   await prisma.systemSetting.update({
     where: { setting_key: CASE_NUMBER_SETTING_KEY },
     data: {
@@ -357,7 +438,7 @@ async function seedDemoData() {
     }
   });
 
-  console.log("Demo seed completed with employees, clients, assignments, and cases.");
+  console.log("Demo seed completed with employees, clients, assignments, cases, and comments.");
 }
 
 if (require.main === module) {

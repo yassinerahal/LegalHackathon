@@ -524,6 +524,15 @@ async function ensureRemoteAccessSchema() {
     ON cases(case_number)
     WHERE case_number IS NOT NULL
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS comments (
+      id SERIAL PRIMARY KEY,
+      case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 }
 
 function serializePlaceholder(placeholder) {
@@ -2623,6 +2632,152 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Login failed." });
+  }
+});
+
+// ---------------------------------------------------------
+// COMMENTS ROUTES - Case Collaboration Chat
+// ---------------------------------------------------------
+
+app.get("/api/cases/:id/comments", requireStaffAuth, async (req, res) => {
+  try {
+    const caseId = Number(req.params.id);
+    if (!Number.isInteger(caseId) || caseId <= 0) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    // Check case access by fetching case with current user's assignment status
+    const caseEntry = await prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        case_assignments: {
+          where: { user_id: Number(req.auth.id) },
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!caseEntry) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const access = buildCaseAccessFlags(caseEntry, req.auth.id, req.auth.role);
+    if (!access.canView) {
+      return res.status(403).json({ error: "You do not have access to this case" });
+    }
+
+    // Fetch all comments for the case, sorted by creation date ascending (oldest first)
+    const comments = await prisma.comment.findMany({
+      where: { case_id: caseId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            full_name: true,
+            username: true,
+            role: true
+          }
+        }
+      },
+      orderBy: { created_at: "asc" }
+    });
+
+    // Serialize comments with user information
+    const serializedComments = comments.map((comment) => ({
+      id: comment.id,
+      case_id: comment.case_id,
+      user_id: comment.user_id,
+      content: comment.content,
+      created_at: comment.created_at,
+      user: {
+        id: comment.user.id,
+        full_name: comment.user.full_name,
+        username: comment.user.username,
+        role: comment.user.role
+      }
+    }));
+
+    res.json(serializedComments);
+  } catch (error) {
+    console.error("Fetch comments error:", error);
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
+});
+
+app.post("/api/cases/:id/comments", requireStaffAuth, async (req, res) => {
+  try {
+    const caseId = Number(req.params.id);
+    const { content } = req.body;
+
+    if (!Number.isInteger(caseId) || caseId <= 0) {
+      return res.status(400).json({ error: "Invalid case id" });
+    }
+
+    if (!content || typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ error: "Comment content is required" });
+    }
+
+    // Check case access by fetching case with current user's assignment status
+    const caseEntry = await prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        case_assignments: {
+          where: { user_id: Number(req.auth.id) },
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!caseEntry) {
+      return res.status(404).json({ error: "Case not found" });
+    }
+
+    const access = buildCaseAccessFlags(caseEntry, req.auth.id, req.auth.role);
+    
+    // Debug logging
+    console.log(`[COMMENT AUTH DEBUG] User: ${req.auth.id}, Role: ${req.auth.role}, Case Owner: ${caseEntry.owner_id}, Assignments: ${JSON.stringify(caseEntry.case_assignments)}, canEdit: ${access.canEdit}, isAssigned: ${access.isAssigned}`);
+    
+    if (!access.canEdit) {
+      console.log(`[COMMENT AUTH DENIED] User ${req.auth.id} (${req.auth.role}) denied access to comment on case ${caseId}`);
+      return res.status(403).json({ error: "You do not have permission to comment on this case" });
+    }
+
+    // Create the comment
+    const comment = await prisma.comment.create({
+      data: {
+        case_id: caseId,
+        user_id: req.auth.id,
+        content: content.trim()
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            full_name: true,
+            username: true,
+            role: true
+          }
+        }
+      }
+    });
+
+    // Serialize response
+    res.status(201).json({
+      id: comment.id,
+      case_id: comment.case_id,
+      user_id: comment.user_id,
+      content: comment.content,
+      created_at: comment.created_at,
+      user: {
+        id: comment.user.id,
+        full_name: comment.user.full_name,
+        username: comment.user.username,
+        role: comment.user.role
+      }
+    });
+  } catch (error) {
+    console.error("Create comment error:", error);
+    res.status(500).json({ error: "Failed to create comment" });
   }
 });
 

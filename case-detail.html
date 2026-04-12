@@ -160,9 +160,38 @@
 
         <section class="rounded-[24px] border border-slate-200/70 bg-white/90 p-5 shadow-panel">
           <div class="mb-4 flex items-center justify-between gap-3">
-            <h3 class="text-3xl font-light tracking-tight text-slate-700">Comments (Newest First)</h3>
+            <h3 class="text-3xl font-light tracking-tight text-slate-700">Case Collaboration Chat</h3>
           </div>
-          <ul id="commentsList" class="list space-y-3"></ul>
+          
+          <!-- Chat messages container - scrollable -->
+          <div id="chatMessagesContainer" class="flex flex-col h-[400px] border border-slate-200 rounded-[20px] bg-slate-50 overflow-hidden">
+            <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+            
+            <!-- Chat input area -->
+            <div id="chatInputSection" class="border-t border-slate-200 bg-white p-4 flex gap-3">
+              <input 
+                id="chatMessageInput" 
+                type="text" 
+                placeholder="Type a message..." 
+                class="flex-1 rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-base text-slate-700 outline-none focus:border-indigo-300 focus:bg-white transition"
+              />
+              <button 
+                id="chatSendBtn" 
+                type="button" 
+                class="rounded-[16px] bg-gradient-to-b from-indigo-500 to-indigo-700 px-5 py-3 text-white font-semibold shadow-lg shadow-indigo-900/10 transition hover:shadow-lg hover:shadow-indigo-900/20 active:scale-95"
+                title="Send message"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                  <path d="M16.6915026,12.4744748 L3.50612381,13.2599618 C3.19218622,13.2599618 3.03521743,13.4170592 3.03521743,13.5741566 L1.15159189,20.0151496 C0.8376543,20.8006365 0.99,21.89 1.77946707,22.52 C2.41,22.99 3.50612381,23.1 4.13399899,22.8429026 L21.714504,14.0454487 C22.6563168,13.5741566 23.1272231,12.6315722 22.6563168,11.6889879 L4.13399899,2.89 C3.34915502,2.5703571 2.40734225,2.68 1.77946707,3.20673992 C0.994623095,3.73347764 0.837654326,4.82286155 1.15159189,5.60835457 L3.03521743,12.0493476 C3.03521743,12.2064449 3.19218622,12.3635423 3.50612381,12.3635423 L16.6915026,13.1490292 C16.6915026,13.1490292 17.1624089,13.1490292 17.1624089,12.52 C17.1624089,12.0493476 16.6915026,11.89 16.6915026,11.89 L16.6915026,12.4744748 Z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Permission denied message (hidden by default) -->
+          <div id="chatNoPermissionMessage" class="hidden rounded-[20px] border border-amber-200 bg-amber-50 p-4 text-center">
+            <p class="text-sm font-medium text-amber-900">You do not have permission to comment on this case.</p>
+          </div>
         </section>
 
         <section id="caseAssignmentsPanel" class="hidden rounded-[24px] border border-slate-200/70 bg-white/90 p-5 shadow-panel">
