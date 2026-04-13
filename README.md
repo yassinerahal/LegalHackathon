@@ -56,7 +56,6 @@ Sobald der Bewertungszeitraum des Hackathons endet, werden die folgenden Maßnah
 
 ### Infrastructure
 - **Docker Compose** – PostgreSQL + LocalStack im Isolationsmodus
-- **NGINX/Vercel Ready** – Produktionsbereit für Cloud-Deployments
 - **HTTPS/TLS Support** – Sichere Kommunikation mit Zertifikaten
 
 ---
