@@ -69,9 +69,9 @@ Das System implementiert **three-tier RBAC** mit strikter Datenvermischung:
 
 | Rolle | Login | Passwort | Berechtigungen |
 |-------|-------|----------|---|
-| **Administrator** | admin@nextact.law | admin123 | ✅ Alle Benutzer verwalten ✅ Alle Fälle ansehen ✅ ERV-Übertragungen durchführen ✅ Systemkonfiguration |
-| **Anwalt (Fallinhaber)** | lawyer@nextact.law | lawyer123 | ✅ Eigene Fälle bearbeiten ✅ Dokumente hochladen ✅ ERV an Gericht senden ✅ Clients verwalten |
-| **Kanzleiangestellte** | assistant@nextact.law | assist123 | ✅ Lese-Zugriff auf Fälle ✅ Dokumente organisieren ✅ ❌ Keine ERV-Übertragungen ❌ Keine Systemänderungen |
+| **Administrator** | admin@nextact.local | Admin123! | ✅ Alle Benutzer verwalten ✅ Alle Fälle ansehen ✅ ERV-Übertragungen durchführen ✅ Systemkonfiguration |
+| **Anwalt (Fallinhaber)** | anna.keller@nextact.local | Demo123! | ✅ Eigene Fälle bearbeiten ✅ Dokumente hochladen ✅ ERV an Gericht senden (falls Fallinhaber) ✅ Clients verwalten |
+| **Kanzleiangestellte** | lisa.hoffmann@nextact.local | Demo123! | ✅ Lese-Zugriff auf Fälle ✅ Dokumente organisieren ✅ ❌ Keine ERV-Übertragungen ❌ Keine Systemänderungen |
 
 **Sicherheitsstrom:**
 ```
@@ -152,18 +152,18 @@ Beispiel: 2026-0815-000042
 Zur Demonstration des vollständigen Systems können Sie sich mit **einem der drei Testkonten** anmelden:
 
 ### Admin-Konto (Vollzugriff)
-- **E-Mail:** admin@nextact.law
-- **Passwort:** admin123
+- **E-Mail:** admin@nextact.local
+- **Passwort:** Admin123!
 - **Features:** Alle Benutzer verwalten, System-Dashboard, ERV-Übertragungen
 
 ### Anwalt-Konto (Ein Fallinhaber)
-- **E-Mail:** lawyer@nextact.law
-- **Passwort:** lawyer123
+- **E-Mail:** anna.keller@nextact.local
+- **Passwort:** Demo123!
 - **Features:** Fälle bearbeiten, Clients verwalten, Dokumente hochladen, ERV-Übermittlung
 
 ### Kanzleiangestellte-Konto (Lese-Zugriff)
-- **E-Mail:** assistant@nextact.law
-- **Passwort:** assist123
+- **E-Mail:** lisa.hoffmann@nextact.local
+- **Passwort:** Demo123!
 - **Features:** Fallankündigung, Dokumentenorganisation (keine Änderungen)
 
 ---
