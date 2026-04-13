@@ -19,7 +19,7 @@ Um sicherzustellen, dass Juroren und Prüfer die NextAct-Demo sofort und ohne ko
 **Wichtiger Hinweis:** Das Hochladen von "Secrets" in ein Versionskontrollsystem ist eine reine "Hackathon-Maßnahme", um eine nahtlose "Plug-and-Play"-Erfahrung zu ermöglichen.
 
 Sicherheitsprotokoll nach der Demo:
-Sobald der Bewertungszeitraum des Hackathons endet, werden die folgenden Maßnahmen ergriffen:
+Sobald der Bewertungszeitraum des Hackathons endet, werden die folgenden Maßnahmen ergriffen: 
 
 - Repository-Bereinigung: Alle sensiblen Konfigurationsdateien und .env-Dateien werden dauerhaft aus dem Repository-Verlauf entfernt.
 
