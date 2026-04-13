@@ -94,7 +94,7 @@ const CASES_KEY = "nextact_cases";
 const THEME_KEY = "nextact_theme";
 
 function ensureUploadInputHints() {
-  [assignUploadFileInput, caseDocuments].forEach((input) => {
+  [assignUploadFileInput].forEach((input) => {
     if (input) {
       input.setAttribute("accept", SUPPORTED_UPLOAD_ACCEPT);
     }
@@ -944,18 +944,18 @@ function clearCaseForm() {
   caseDeadline.value = "";
   caseDescription.value = "";
   caseComment.value = "";
-  selectedFiles = [];
-  currentUploadedDocuments = [];
-  newUploadNames = new Set();
   currentDocPlaceholders = [];
   selectedCaseAssigneeIds = new Set();
-  caseDocuments.value = "";
-  fileCount.textContent = "";
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
-  renderDocPlaceholderList();
-  renderUploadedFileBoxes();
-  renderCaseTeamSelection();
+  
+  try {
+    renderDocPlaceholderList();
+    renderCaseTeamSelection(null);
+  } catch (error) {
+    console.error("Error in clearCaseForm:", error);
+  }
+  
   clientStatus.textContent = "";
   clientStatus.className = "field-note";
   clientForm.classList.add("hidden");
@@ -965,6 +965,7 @@ function clearCaseForm() {
 }
 
 function renderDocPlaceholderList() {
+  if (!docPlaceholderList) return;
   docPlaceholderList.innerHTML = "";
   if (!currentDocPlaceholders.length) {
     const li = document.createElement("li");
@@ -977,47 +978,13 @@ function renderDocPlaceholderList() {
   currentDocPlaceholders.forEach((entry, index) => {
     const li = document.createElement("li");
     li.className =
-      "doc-placeholder-item grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_auto] xl:items-start";
+      "doc-placeholder-item flex items-center justify-between rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm";
 
     const label = document.createElement("div");
     label.innerHTML = `
       <p class="text-lg font-semibold text-slate-800">${entry.name}</p>
       <p class="mt-2 text-sm text-slate-500">${entry.status}</p>
     `;
-
-    const dropField = document.createElement("div");
-    dropField.className =
-      "doc-drop-field min-h-[120px] rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 transition";
-    dropField.dataset.docDropId = entry.id;
-
-    const attachedFiles = Array.isArray(entry.attachedFiles) ? entry.attachedFiles : [];
-
-    if (attachedFiles.length) {
-      const attachedList = document.createElement("div");
-      attachedList.className = "doc-drop-file-list flex flex-col gap-3";
-
-      attachedFiles.forEach((attachedFile) => {
-        const linkedFile = currentUploadedDocuments.find((file) => file.name === attachedFile.original_name);
-        const fileCard = document.createElement("div");
-        fileCard.className = "flex items-center gap-3 rounded-2xl bg-white px-3 py-3 shadow-sm";
-        fileCard.innerHTML = `
-          <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-xs font-semibold text-indigo-600">${getFileExtension(linkedFile?.name || attachedFile.original_name)}</span>
-          <div class="min-w-0">
-            <p class="truncate text-sm font-medium text-slate-700">${linkedFile?.name || attachedFile.original_name}</p>
-            <p class="text-xs text-slate-400">${attachedFile.mime_type || "Attached file"}</p>
-          </div>
-        `;
-        attachedList.appendChild(fileCard);
-      });
-
-      dropField.appendChild(attachedList);
-    } else {
-      dropField.innerHTML = `
-        <div class="flex h-full min-h-[88px] items-center justify-center text-center text-sm text-slate-400">
-          Drop an uploaded file here
-        </div>
-      `;
-    }
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
@@ -1027,7 +994,6 @@ function renderDocPlaceholderList() {
     removeBtn.textContent = "Remove";
 
     li.appendChild(label);
-    li.appendChild(dropField);
     li.appendChild(removeBtn);
     docPlaceholderList.appendChild(li);
   });
@@ -1060,6 +1026,8 @@ function isImageFile(file) {
 }
 
 function renderUploadedFileBoxes() {
+  // Note: File uploads for case creation have been removed
+  if (!uploadedFileBoxes) return;
   uploadedFileBoxes.innerHTML = "";
   if (!currentUploadedDocuments.length) return;
   currentUploadedDocuments.forEach((file) => {
@@ -1118,6 +1086,8 @@ function updateClientStatus() {
 }
 
 function updateSelectedFiles(files) {
+  // Note: File uploads for case creation have been removed
+  if (!fileCount || !uploadedFileBoxes) return;
   selectedFiles = Array.from(files || []);
   if (!selectedFiles.length) {
     fileCount.textContent = currentUploadedDocuments.length
@@ -1164,10 +1134,14 @@ async function openEditCase(caseId) {
   newUploadNames = new Set();
   currentDocPlaceholders = (entry.requiredDocuments || []).map((doc) => ({ ...doc }));
   selectedCaseAssigneeIds = new Set();
-  caseDocuments.value = "";
-  fileCount.textContent = currentUploadedDocuments.length
-    ? `${currentUploadedDocuments.length} uploaded file(s) in this case.`
-    : "";
+  if (caseDocuments) {
+    caseDocuments.value = "";
+  }
+  if (fileCount) {
+    fileCount.textContent = currentUploadedDocuments.length
+      ? `${currentUploadedDocuments.length} uploaded file(s) in this case.`
+      : "";
+  }
   docPlaceholderName.value = "";
   docPlaceholderStatus.value = "Pending";
 
@@ -1181,7 +1155,9 @@ async function openEditCase(caseId) {
   }
 
   renderDocPlaceholderList();
-  renderUploadedFileBoxes();
+  if (uploadedFileBoxes) {
+    renderUploadedFileBoxes();
+  }
   renderCaseTeamSelection(entry);
   updateClientStatus();
   quickAddModal.showModal();
@@ -1466,61 +1442,67 @@ addDocPlaceholderBtn.addEventListener("click", () => {
   renderDocPlaceholderList();
 });
 
-docPlaceholderList.addEventListener("click", (event) => {
-  const removeBtn = event.target.closest("[data-doc-remove]");
-  if (!removeBtn) return;
-  const index = Number(removeBtn.dataset.docRemove);
-  if (Number.isNaN(index)) return;
-  currentDocPlaceholders.splice(index, 1);
-  renderDocPlaceholderList();
-});
+if (docPlaceholderList) {
+  docPlaceholderList.addEventListener("click", (event) => {
+    const removeBtn = event.target.closest("[data-doc-remove]");
+    if (!removeBtn) return;
+    const index = Number(removeBtn.dataset.docRemove);
+    if (Number.isNaN(index)) return;
+    currentDocPlaceholders.splice(index, 1);
+    renderDocPlaceholderList();
+  });
+}
 
-uploadedFileBoxes.addEventListener("dragstart", (event) => {
-  const fileBox = event.target.closest(".uploaded-file-box");
-  if (!fileBox) return;
-  event.dataTransfer.setData("text/plain", fileBox.dataset.fileName || "");
-});
+if (uploadedFileBoxes) {
+  uploadedFileBoxes.addEventListener("dragstart", (event) => {
+    const fileBox = event.target.closest(".uploaded-file-box");
+    if (!fileBox) return;
+    event.dataTransfer.setData("text/plain", fileBox.dataset.fileName || "");
+  });
+}
 
-docPlaceholderList.addEventListener("dragover", (event) => {
-  const dropField = event.target.closest("[data-doc-drop-id]");
-  if (!dropField) return;
-  event.preventDefault();
-  dropField.classList.add("drag-active");
-});
+if (docPlaceholderList) {
+  docPlaceholderList.addEventListener("dragover", (event) => {
+    const dropField = event.target.closest("[data-doc-drop-id]");
+    if (!dropField) return;
+    event.preventDefault();
+    dropField.classList.add("drag-active");
+  });
 
-docPlaceholderList.addEventListener("dragleave", (event) => {
-  const dropField = event.target.closest("[data-doc-drop-id]");
-  if (!dropField) return;
-  dropField.classList.remove("drag-active");
-});
+  docPlaceholderList.addEventListener("dragleave", (event) => {
+    const dropField = event.target.closest("[data-doc-drop-id]");
+    if (!dropField) return;
+    dropField.classList.remove("drag-active");
+  });
 
-docPlaceholderList.addEventListener("drop", (event) => {
-  const dropField = event.target.closest("[data-doc-drop-id]");
-  if (!dropField) return;
-  event.preventDefault();
-  dropField.classList.remove("drag-active");
-  const fileName = event.dataTransfer.getData("text/plain");
-  if (!fileName) return;
-  const linkedFile = currentUploadedDocuments.find((file) => file.name === fileName);
-  if (!linkedFile) return;
+  docPlaceholderList.addEventListener("drop", (event) => {
+    const dropField = event.target.closest("[data-doc-drop-id]");
+    if (!dropField) return;
+    event.preventDefault();
+    dropField.classList.remove("drag-active");
+    const fileName = event.dataTransfer.getData("text/plain");
+    if (!fileName) return;
+    const linkedFile = currentUploadedDocuments.find((file) => file.name === fileName);
+    if (!linkedFile) return;
 
-  const placeholderId = dropField.dataset.docDropId;
-  const placeholder = currentDocPlaceholders.find((item) => item.id === placeholderId);
-  if (!placeholder) return;
+    const placeholderId = dropField.dataset.docDropId;
+    const placeholder = currentDocPlaceholders.find((item) => item.id === placeholderId);
+    if (!placeholder) return;
 
-  placeholder.attachedFiles = placeholder.attachedFiles || [];
-  if (!placeholder.attachedFiles.some((entry) => entry.original_name === linkedFile.name)) {
-    placeholder.attachedFiles.push({
-      original_name: linkedFile.name,
-      s3_key: linkedFile.s3Key || "",
-      mime_type: linkedFile.mimeType || "",
-      encryption_iv: linkedFile.encryptionIv || "",
-      encryption_tag: linkedFile.encryptionTag || ""
-    });
-  }
-  placeholder.status = placeholder.attachedFiles.length ? "Uploaded" : "Pending";
-  renderDocPlaceholderList();
-});
+    placeholder.attachedFiles = placeholder.attachedFiles || [];
+    if (!placeholder.attachedFiles.some((entry) => entry.original_name === linkedFile.name)) {
+      placeholder.attachedFiles.push({
+        original_name: linkedFile.name,
+        s3_key: linkedFile.s3Key || "",
+        mime_type: linkedFile.mimeType || "",
+        encryption_iv: linkedFile.encryptionIv || "",
+        encryption_tag: linkedFile.encryptionTag || ""
+      });
+    }
+    placeholder.status = placeholder.attachedFiles.length ? "Uploaded" : "Pending";
+    renderDocPlaceholderList();
+  });
+}
 
 saveClientBtn.addEventListener("click", async () => {
   const full_name = clientFullName.value.trim();
@@ -1574,23 +1556,8 @@ saveClientBtn.addEventListener("click", async () => {
   }
 });
 
-dropZone.addEventListener("click", () => caseDocuments.click());
-caseDocuments.addEventListener("change", () => updateSelectedFiles(caseDocuments.files));
-
-dropZone.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  dropZone.classList.add("drag-active");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("drag-active");
-});
-
-dropZone.addEventListener("drop", (event) => {
-  event.preventDefault();
-  dropZone.classList.remove("drag-active");
-  updateSelectedFiles(event.dataTransfer.files);
-});
+// File uploads for case creation have been removed - users can upload files in the case detail page
+// The dropZone element is no longer present in the case creation dialog
 
 document.addEventListener("dragenter", (event) => {
   event.preventDefault();
@@ -1617,11 +1584,10 @@ document.addEventListener("drop", (event) => {
   event.preventDefault();
   dragDepth = 0;
   screenDropOverlay.classList.add("hidden");
-  updateSelectedFiles(event.dataTransfer.files);
 });
 
 // ==============================================================================
-// UPDATED: Save Case now also uploads selected files to S3/Postgres
+// Save Case (file uploads are now handled only in case detail page)
 // ==============================================================================
 saveBtn.addEventListener("click", async () => {
   const name = caseName.value.trim();
@@ -1710,80 +1676,15 @@ saveBtn.addEventListener("click", async () => {
       });
     }
 
-    // NEW: Upload any files that were dropped into the modal
-    if (selectedFiles.length > 0) {
-      const uploadedDocuments = [];
-      const failedUploads = [];
-      for (const file of selectedFiles) {
-        try {
-          const uploadData = await uploadFile(file);
-          const linkedDocument = await linkCaseDocument(targetCaseId, {
-            original_name: file.name,
-            s3_key: uploadData.filePath,
-            mime_type: file.type || "application/octet-stream",
-            encryption_iv: uploadData.encryption_iv,
-            encryption_tag: uploadData.encryption_tag
-          });
-
-          uploadedDocuments.push({
-            name: linkedDocument.original_name,
-            previewUrl: "",
-            mimeType: linkedDocument.mime_type || file.type || "",
-            s3Key: linkedDocument.s3_key,
-            encryptionIv: linkedDocument.encryption_iv || "",
-            encryptionTag: linkedDocument.encryption_tag || "",
-            uploadedAt: linkedDocument.uploaded_at || ""
-          });
-          uploadedDocumentMap.set(linkedDocument.original_name, {
-            s3_key: linkedDocument.s3_key,
-            mime_type: linkedDocument.mime_type || file.type || "",
-            encryption_iv: linkedDocument.encryption_iv || "",
-            encryption_tag: linkedDocument.encryption_tag || ""
-          });
-        } catch (error) {
-          console.error(`Error uploading ${file.name} with new case:`, error);
-          failedUploads.push(file.name);
-        }
-      }
-
-      const targetCaseIndex = state.cases.findIndex((entry) => Number(entry.id) === Number(targetCaseId));
-      if (targetCaseIndex >= 0 && uploadedDocuments.length) {
-        state.cases[targetCaseIndex] = {
-          ...state.cases[targetCaseIndex],
-          uploadedDocuments: [
-            ...(state.cases[targetCaseIndex].uploadedDocuments || []),
-            ...uploadedDocuments
-          ]
-        };
-      }
-
-      if (failedUploads.length) {
-        window.alert(`Some files could not be uploaded: ${failedUploads.join(", ")}`);
-      }
-    }
+    // NOTE: File uploads are now handled only in the case detail page, not during case creation
 
     if (currentDocPlaceholders.length > 0) {
       const createdPlaceholders = await createCasePlaceholders(
         targetCaseId,
         currentDocPlaceholders.map((placeholder) => ({
           name: placeholder.name,
-          status:
-            (placeholder.attachedFiles || []).some((file) => uploadedDocumentMap.get(file.original_name))
-              ? "Uploaded"
-              : placeholder.status || "Pending",
-          attached_files: (placeholder.attachedFiles || [])
-            .map((file) => {
-              const uploadedDocument = uploadedDocumentMap.get(file.original_name);
-              if (!uploadedDocument?.s3_key) return null;
-              return {
-                original_name: file.original_name,
-                s3_key: uploadedDocument.s3_key,
-                mime_type: uploadedDocument.mime_type || file.mime_type || "",
-                encryption_iv: uploadedDocument.encryption_iv || "",
-                encryption_tag: uploadedDocument.encryption_tag || ""
-              };
-            })
-            .filter(Boolean)
+          status: placeholder.status || "Pending",
+          attached_files: []
         }))
       );
 
@@ -1862,6 +1763,11 @@ if (saveCasePatternBtn) {
   });
 }
 
-renderDocPlaceholderList();
-renderUploadedFileBoxes();
-render();
+// Initialize rendering - wrap in try/catch to prevent breaking saveBtn registration
+try {
+  renderDocPlaceholderList();
+  renderUploadedFileBoxes();
+  render();
+} catch (error) {
+  console.error("Error during initial render:", error);
+}

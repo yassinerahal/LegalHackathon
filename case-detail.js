@@ -463,6 +463,9 @@ function getPlaceholderVersions(placeholder) {
   if (Array.isArray(placeholder?.versions)) {
     return placeholder.versions;
   }
+  if (Array.isArray(placeholder?.attached_files)) {
+    return placeholder.attached_files;
+  }
   if (Array.isArray(placeholder?.attachedFiles)) {
     return placeholder.attachedFiles;
   }

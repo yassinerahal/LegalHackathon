@@ -945,49 +945,56 @@ app.post("/api/cases/:id/placeholders", requireCaseEditAccess, async (req, res) 
     }
 
     const created = await prisma.$transaction(
-      placeholders.map(async (placeholder) => {
-        const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
-        const createdPlaceholder = await prisma.casePlaceholder.create({
-          data: {
-            case_id: Number(caseId),
-            name: String(placeholder.name || "").trim(),
-            status: attachedFiles.length ? "Uploaded" : String(placeholder.status || "Pending")
-          }
-        });
+      async (tx) => {
+        return Promise.all(
+          placeholders.map(async (placeholder) => {
+            const attachedFiles = Array.isArray(placeholder.attached_files) ? placeholder.attached_files : [];
+            const createdPlaceholder = await tx.casePlaceholder.create({
+              data: {
+                case_id: Number(caseId),
+                name: String(placeholder.name || "").trim(),
+                status: attachedFiles.length ? "Uploaded" : String(placeholder.status || "Pending")
+              }
+            });
 
-        for (const file of attachedFiles) {
-          if (!file?.original_name || !file?.s3_key) continue;
+            for (const file of attachedFiles) {
+              if (!file?.original_name || !file?.s3_key) continue;
 
-          const document = await prisma.document.create({
-            data: {
-              case_id: Number(caseId),
-              name: file.original_name
+              const document = await tx.document.create({
+                data: {
+                  case_id: Number(caseId),
+                  name: file.original_name
+                }
+              });
+
+              await tx.documentVersion.create({
+                data: {
+                  document_id: document.id,
+                  placeholder_id: createdPlaceholder.id,
+                  original_name: file.original_name,
+                  s3_key: file.s3_key,
+                  mime_type: file.mime_type || null,
+                  encryption_iv: file.encryption_iv || null,
+                  encryption_tag: file.encryption_tag || null,
+                  uploaded_by: req.auth.id
+                }
+              });
             }
-          });
 
-          await prisma.documentVersion.create({
-            data: {
-              document_id: document.id,
-              placeholder_id: createdPlaceholder.id,
-              original_name: file.original_name,
-              s3_key: file.s3_key,
-              mime_type: file.mime_type || null,
-              encryption_iv: file.encryption_iv || null,
-              encryption_tag: file.encryption_tag || null,
-              uploaded_by: req.auth.id
-            }
-          });
-        }
-
-        return prisma.casePlaceholder.findUnique({
-          where: { id: createdPlaceholder.id },
-          include: {
-            versions: {
-              orderBy: { uploaded_at: "asc" }
-            }
-          }
-        });
-      })
+            return tx.casePlaceholder.findUnique({
+              where: { id: createdPlaceholder.id },
+              include: {
+                versions: {
+                  orderBy: { uploaded_at: "asc" }
+                }
+              }
+            });
+          })
+        );
+      },
+      {
+        isolationLevel: "Serializable"
+      }
     );
 
     res.status(201).json(created.map(serializePlaceholder));
